@@ -3,9 +3,6 @@ name: Build WS Client
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 permissions:
   contents: read
@@ -28,7 +25,6 @@ jobs:
           java-version: '17'
 
       # 3. Android SDK
-      # Не устанавливаем устаревший пакет tools.
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
