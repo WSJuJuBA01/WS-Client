@@ -1,88 +1,69 @@
-name: Libbox API Probe
+name: Build WS Client
 
 on:
   workflow_dispatch:
-
-permissions:
-  contents: read
+  push:
+    branches: [ main ]
 
 jobs:
-  probe:
-    name: Build libbox and dump API
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Resolve latest stable sing-box tag
-        id: tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG=$(gh api repos/SagerNet/sing-box/releases/latest --jq .tag_name)
-          echo "name=$TAG" >> "$GITHUB_OUTPUT"
-          echo "sing-box tag: $TAG"
-
-      - name: Checkout sing-box
+      - name: Checkout WS Client
         uses: actions/checkout@v4
-        with:
-          repository: SagerNet/sing-box
-          ref: ${{ steps.tag.outputs.name }}
-          path: sing-box
-          fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: sing-box/go.mod
-          cache: false
-
-      - name: Set up Java 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: 17
 
-      - name: Install NDK
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager --install "ndk;27.2.12479018"
-          ls "$ANDROID_HOME/ndk"
+          sdkmanager "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> $GITHUB_ENV
 
-      - name: Build libbox.aar
-        working-directory: sing-box
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Build Xray AAR
         run: |
-          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
-          make lib_install
-          export PATH="$PATH:$(go env GOPATH)/bin"
-          make lib_android
-          ls -la libbox.aar
+          git clone --depth 1 https://github.com/2dust/AndroidLibXrayLite.git /tmp/xraylib
+          cd /tmp/xraylib
 
-      - name: API dump
-        working-directory: sing-box
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
+          mkdir -p assets data
+          bash gen_assets.sh download
+          cp -v data/*.dat assets/
+
+          gomobile init
+          go mod tidy
+          gomobile bind -v -androidapi 24 \
+            -trimpath \
+            -ldflags='-s -w -buildid= -checklinkname=0' ./
+
+          mkdir -p "$GITHUB_WORKSPACE/app/libs"
+          cp libv2ray.aar "$GITHUB_WORKSPACE/app/libs/libv2ray.aar"
+
+      - name: Build APK
         run: |
-          mkdir -p probe && cd probe
-          unzip -q -o ../libbox.aar classes.jar
-          echo "=== sing-box ${{ steps.tag.outputs.name }} ==="
-          javap -public -cp classes.jar \
-            io.nekohasekai.libbox.PlatformInterface \
-            io.nekohasekai.libbox.TunOptions \
-            io.nekohasekai.libbox.Libbox \
-            io.nekohasekai.libbox.SetupOptions \
-            io.nekohasekai.libbox.CommandServer \
-            io.nekohasekai.libbox.CommandServerHandler \
-            io.nekohasekai.libbox.InterfaceUpdateListener \
-            io.nekohasekai.libbox.NetworkInterface \
-            io.nekohasekai.libbox.NetworkInterfaceIterator \
-            io.nekohasekai.libbox.StringIterator \
-            io.nekohasekai.libbox.RoutePrefix \
-            io.nekohasekai.libbox.RoutePrefixIterator \
-            2>&1 | tee ../api.txt || true
+          chmod +x ./gradlew 2>/dev/null || true
+          if [ -f ./gradlew ]; then
+            ./gradlew assembleDebug
+          else
+            gradle assembleDebug
+          fi
 
-      - name: Upload libbox.aar
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: libbox-aar
-          path: |
-            sing-box/libbox.aar
-            sing-box/api.txt
-          retention-days: 14
+          name: WS-Client-debug
+          path: app/build/outputs/apk/debug/*.apk
