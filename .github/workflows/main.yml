@@ -41,11 +41,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install NDK
-        run: sdkmanager "ndk;27.2.12479018"
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager --install "ndk;27.2.12479018"
+          ls "$ANDROID_HOME/ndk"
 
       - name: Build libbox.aar
         working-directory: sing-box
