@@ -1,3 +1,4 @@
+
 package com.wsclient
 
 import android.util.Log
@@ -18,21 +19,24 @@ object XrayManager {
         if (running) return
 
         val callback = object : CoreCallbackHandler {
-            override fun startup(): Int {
+            override fun startup(): Long {
                 running = true
                 Log.i(TAG, "Xray started")
-                return 0
+                return 0L
             }
 
-            override fun shutdown(): Int {
+            override fun shutdown(): Long {
                 running = false
                 Log.i(TAG, "Xray stopped")
-                return 0
+                return 0L
             }
 
-            override fun onEmitStatus(status: Int, message: String): Int {
+            override fun onEmitStatus(
+                status: Long,
+                message: String
+            ): Long {
                 Log.i(TAG, "$status: $message")
-                return 0
+                return 0L
             }
         }
 
@@ -45,7 +49,11 @@ object XrayManager {
         } catch (e: Exception) {
             running = false
             controller = null
-            throw IllegalStateException("Не удалось запустить Xray: ${e.message}", e)
+
+            throw IllegalStateException(
+                "Не удалось запустить Xray: ${e.message}",
+                e
+            )
         }
     }
 
@@ -63,7 +71,7 @@ object XrayManager {
     fun trafficStats(): String {
         return try {
             controller?.queryAllOutboundTrafficStats().orEmpty()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             ""
         }
     }
