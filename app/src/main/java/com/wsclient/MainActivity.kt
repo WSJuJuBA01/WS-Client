@@ -890,26 +890,18 @@ class MainActivity : Activity() {
 
         thread(name = "WS-Subscription-Update") {
             try {
-                val imported = kotlinx.coroutines.runBlocking {
+                val result = kotlinx.coroutines.runBlocking {
                     SubscriptionManager.updateDetailed(
                         this@MainActivity,
                         url
                     )
                 }
 
-                // updateDetailed уже возвращает сохранённые профили
-                // с их постоянными ID.
-                SubscriptionStore.upsert(
-                    this@MainActivity,
-                    url,
-                    imported
-                )
-
                 runOnUiThread {
                     refreshProfiles()
 
                     showMessage(
-                        "Обновлено серверов: ${imported.size}"
+                        "Обновлено серверов: ${result.imported}"
                     )
                 }
             } catch (e: Exception) {
@@ -1290,24 +1282,18 @@ class MainActivity : Activity() {
 
         thread(name = "WS-Subscription-Refresh") {
             try {
-                val imported = kotlinx.coroutines.runBlocking {
+                val result = kotlinx.coroutines.runBlocking {
                     SubscriptionManager.updateDetailed(
                         this@MainActivity,
                         group.url
                     )
                 }
 
-                SubscriptionStore.upsert(
-                    this@MainActivity,
-                    group.url,
-                    imported
-                )
-
                 runOnUiThread {
                     refreshProfiles()
 
                     showMessage(
-                        "${group.title}: обновлено ${imported.size} серверов"
+                        "${group.title}: обновлено ${result.imported} серверов"
                     )
                 }
             } catch (e: Exception) {
