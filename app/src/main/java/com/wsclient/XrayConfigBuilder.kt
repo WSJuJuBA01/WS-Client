@@ -99,10 +99,6 @@ object XrayConfigBuilder {
         return config.toString()
     }
 
-    /**
-     * Минимальная конфигурация для HTTP GET-проверки.
-     * Используется только прокси выбранного профиля.
-     */
     fun buildForPing(profile: ServerProfile): String {
         val outbound = JSONObject(profile.config.toString())
             .apply {
