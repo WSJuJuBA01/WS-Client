@@ -330,6 +330,22 @@ class MainActivity : Activity() {
             }
         )
 
+        root.addView(space(8))
+
+        root.addView(
+            actionButton(
+                "⌁  Пинг и имитация VPN-клиентов",
+                pastel
+            ) {
+                startActivity(
+                    Intent(
+                        this,
+                        NetworkToolsActivity::class.java
+                    )
+                )
+            }
+        )
+
         root.addView(space(22))
 
         val footer = TextView(this).apply {
@@ -699,7 +715,8 @@ class MainActivity : Activity() {
             return
         }
 
-        if (selectedId == null ||
+        if (
+            selectedId == null ||
             profiles.none { it.id == selectedId }
         ) {
             selectedId = getSharedPreferences(
@@ -761,14 +778,20 @@ class MainActivity : Activity() {
             }
 
             val details = TextView(this).apply {
-                text = "${profile.protocol}  •  ${profile.address}:${profile.port}"
+                text =
+                    "${profile.protocol}  •  ${profile.address}:${profile.port}"
                 textSize = 11f
                 setTextColor(mutedColor(pastel))
                 setPadding(0, dp(6), 0, 0)
             }
 
             val selectedLabel = TextView(this).apply {
-                text = if (selected) "ВЫБРАН" else "НАЖМИ, ЧТОБЫ ВЫБРАТЬ"
+                text = if (selected) {
+                    "ВЫБРАН"
+                } else {
+                    "НАЖМИ, ЧТОБЫ ВЫБРАТЬ"
+                }
+
                 textSize = 9f
                 letterSpacing = 1f
                 typeface = Typeface.DEFAULT_BOLD
@@ -871,7 +894,9 @@ class MainActivity : Activity() {
     }
 
     private fun dp(value: Int): Int {
-        return (value * resources.displayMetrics.density).toInt()
+        return (
+            value * resources.displayMetrics.density
+        ).toInt()
     }
 
     companion object {
