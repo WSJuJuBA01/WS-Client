@@ -1,4 +1,3 @@
-
 package com.wsclient
 
 import android.app.Activity
@@ -46,22 +45,17 @@ class NetworkToolsActivity : Activity() {
 
     private var settings = ClientIdentitySettings()
 
+    private val palette: Customization.Palette
+        get() = Customization.palette(this)
+
     private val pastel: Boolean
-        get() = Customization.isPastel(this)
+        get() = palette.isLight
 
     private val primaryTextColor: Int
-        get() = if (pastel) {
-            Color.rgb(55, 39, 67)
-        } else {
-            Color.rgb(242, 245, 250)
-        }
+        get() = palette.foreground
 
     private val backgroundColor: Int
-        get() = if (pastel) {
-            Color.rgb(248, 238, 249)
-        } else {
-            Color.rgb(13, 16, 24)
-        }
+        get() = palette.background
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,6 +72,7 @@ class NetworkToolsActivity : Activity() {
             setPadding(dp(18), dp(18), dp(18), dp(28))
             setBackgroundColor(backgroundColor)
         }
+        Customization.applyWallpaper(this, root)
 
         val scroll = ScrollView(this).apply {
             isFillViewport = true
@@ -272,8 +267,7 @@ class NetworkToolsActivity : Activity() {
             setTextColor(primaryTextColor)
             setHintTextColor(mutedColor())
             background = rounded(
-                if (pastel) Color.rgb(248, 243, 250)
-                else Color.rgb(15, 19, 29),
+                palette.surface,
                 dp(12)
             )
             setPadding(dp(12), dp(12), dp(12), dp(12))
@@ -333,8 +327,7 @@ class NetworkToolsActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(12), dp(12), dp(12))
             background = rounded(
-                if (pastel) Color.rgb(248, 243, 250)
-                else Color.rgb(15, 19, 29),
+                palette.surface,
                 dp(14)
             )
         }
@@ -644,8 +637,7 @@ class NetworkToolsActivity : Activity() {
             setTextColor(primaryTextColor)
             setHintTextColor(mutedColor())
             background = rounded(
-                if (pastel) Color.rgb(248, 243, 250)
-                else Color.rgb(15, 19, 29),
+                palette.surface,
                 dp(12)
             )
             setPadding(dp(12), dp(11), dp(12), dp(11))
@@ -684,8 +676,7 @@ class NetworkToolsActivity : Activity() {
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(primaryTextColor)
             background = rounded(
-                if (pastel) Color.rgb(239, 225, 246)
-                else Color.rgb(34, 43, 62),
+                palette.surface,
                 dp(12)
             )
             setPadding(dp(14), dp(14), dp(14), dp(14))
@@ -717,8 +708,7 @@ class NetworkToolsActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(15), dp(15), dp(15), dp(15))
             background = rounded(
-                if (pastel) Color.WHITE
-                else Color.rgb(24, 29, 41),
+                palette.surface,
                 dp(18)
             )
             layoutParams = LinearLayout.LayoutParams(
@@ -747,21 +737,9 @@ class NetworkToolsActivity : Activity() {
         }
     }
 
-    private fun accentColor(): Int {
-        return if (pastel) {
-            Color.rgb(151, 104, 181)
-        } else {
-            Color.rgb(76, 116, 245)
-        }
-    }
+    private fun accentColor(): Int = Customization.accent(this)
 
-    private fun mutedColor(): Int {
-        return if (pastel) {
-            Color.rgb(133, 113, 145)
-        } else {
-            Color.rgb(145, 157, 180)
-        }
-    }
+    private fun mutedColor(): Int = palette.muted
 
     private fun dp(value: Int): Int {
         return (value * resources.displayMetrics.density).toInt()
