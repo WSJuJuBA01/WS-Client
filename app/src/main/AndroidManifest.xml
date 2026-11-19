@@ -28,6 +28,14 @@
             android:name=".NetworkToolsActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".AppearanceActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".SplitTunnelingActivity"
+            android:exported="false" />
+
         <service
             android:name=".VPNService"
             android:permission="android.permission.BIND_VPN_SERVICE"
