@@ -79,6 +79,13 @@ class VPNService : VpnService() {
                 false
             )
 
+            if (allowList && packages.isEmpty()) {
+                error(
+                    "Список разрешённых приложений пуст. " +
+                        "Выбери хотя бы одно приложение."
+                )
+            }
+
             if (packages.isNotEmpty()) {
                 SplitTunneling.apply(
                     builder,
@@ -99,6 +106,10 @@ class VPNService : VpnService() {
             )
 
             XrayManager.start(config, descriptor.fd)
+
+            check(XrayManager.running) {
+                "Xray не перешёл в рабочее состояние"
+            }
 
             starting = false
             sendState(
@@ -144,27 +155,36 @@ class VPNService : VpnService() {
             getSystemService(Context.CONNECTIVITY_SERVICE)
                 as ConnectivityManager
 
-        val network = connectivityManager.activeNetwork ?: return null
-        val capabilities =
-            connectivityManager.getNetworkCapabilities(network)
-                ?: return null
+        val candidates = buildList {
+            connectivityManager.activeNetwork?.let { add(it) }
 
-        if (!capabilities.hasCapability(
-                NetworkCapabilities.NET_CAPABILITY_INTERNET
-            )
-        ) {
-            return null
+            connectivityManager.allNetworks.forEach {
+                if (it !in this) add(it)
+            }
         }
 
-        if (
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
-        ) {
-            Log.w(TAG, "Active network is already a VPN")
+        for (network in candidates) {
+            val capabilities =
+                connectivityManager.getNetworkCapabilities(network)
+                    ?: continue
+
+            if (!capabilities.hasCapability(
+                    NetworkCapabilities.NET_CAPABILITY_INTERNET
+                )
+            ) continue
+
+            if (capabilities.hasTransport(
+                    NetworkCapabilities.TRANSPORT_VPN
+                )
+            ) continue
+
+            val name =
+                connectivityManager.getLinkProperties(network)?.interfaceName
+
+            if (!name.isNullOrBlank()) return name
         }
 
-        return connectivityManager
-            .getLinkProperties(network)
-            ?.interfaceName
+        return null
     }
 
     private fun stopTunnel() {
