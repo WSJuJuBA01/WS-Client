@@ -1,22 +1,45 @@
 package com.wsclient
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.net.InetSocketAddress
-import java.net.Socket
+import libv2ray.Libv2ray
+import java.net.URL
 
 object ServerLatency {
-    suspend fun check(profile: ServerProfile): Long =
-        withContext(Dispatchers.IO) {
-            val start = System.currentTimeMillis()
 
-            Socket().use { socket ->
-                socket.connect(
-                    InetSocketAddress(profile.address, profile.port),
-                    5000
-                )
-            }
+    const val DEFAULT_TEST_URL =
+        "https://www.google.com/generate_204"
 
-            System.currentTimeMillis() - start
+    /**
+     * Измеряет задержку HTTP GET через outbound конкретного профиля.
+     *
+     * Возвращает задержку в миллисекундах.
+     * При сетевой ошибке или ошибке конфигурации выбрасывает исключение.
+     */
+    fun check(
+        profile: ServerProfile,
+        testUrl: String = DEFAULT_TEST_URL
+    ): Long {
+        val parsedUrl = URL(testUrl)
+
+        require(
+            parsedUrl.protocol.equals("https", ignoreCase = true) ||
+                parsedUrl.protocol.equals("http", ignoreCase = true)
+        ) {
+            "URL должен начинаться с http:// или https://"
         }
+
+        val config = XrayConfigBuilder.buildForPing(profile)
+
+        val delay = Libv2ray.measureOutboundDelay(
+            config,
+            testUrl
+        )
+
+        if (delay < 0L) {
+            throw IllegalStateException(
+                "Xray вернул отрицательное значение задержки"
+            )
+        }
+
+        return delay
+    }
 }
