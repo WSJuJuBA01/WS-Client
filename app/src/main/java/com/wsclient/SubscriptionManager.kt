@@ -6,20 +6,29 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URL
 
+data class SubscriptionUpdateResult(
+    val imported: Int,
+    val profiles: List<ServerProfile>
+)
+
 object SubscriptionManager {
 
-    suspend fun update(context: Context, url: String): Int =
+    suspend fun update(
+        context: Context,
+        url: String
+    ): Int = updateDetailed(context, url).imported
+
+    suspend fun updateDetailed(
+        context: Context,
+        url: String
+    ): SubscriptionUpdateResult =
         withContext(Dispatchers.IO) {
             val connection = URL(url).openConnection()
-
             connection.connectTimeout = 15000
             connection.readTimeout = 20000
-
-            // Только идентификация HTTP-клиента.
-            // Остальная логика обновления не изменена.
-            SubscriptionIdentity.applyHeaders(
-                context,
-                connection
+            connection.setRequestProperty(
+                "User-Agent",
+                SubscriptionIdentity.userAgent(context)
             )
 
             val body = connection.getInputStream()
@@ -35,8 +44,7 @@ object SubscriptionManager {
                 )
             }.getOrDefault(body)
 
-            val profiles = decoded
-                .lineSequence()
+            val profiles = decoded.lineSequence()
                 .map { it.trim() }
                 .filter { it.contains("://") }
                 .mapNotNull {
@@ -50,6 +58,19 @@ object SubscriptionManager {
                 ProfileStore.add(context, it)
             }
 
-            profiles.size
+            SubscriptionStore.upsert(
+                context,
+                url,
+                profiles.mapNotNull { incoming ->
+                    ProfileStore.getAll(context).firstOrNull {
+                        ProfileStore.sameConnection(it, incoming)
+                    }
+                }
+            )
+
+            SubscriptionUpdateResult(
+                imported = profiles.size,
+                profiles = profiles
+            )
         }
 }
