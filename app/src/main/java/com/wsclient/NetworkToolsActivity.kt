@@ -1,3 +1,4 @@
+
 package com.wsclient
 
 import android.app.Activity
@@ -48,7 +49,7 @@ class NetworkToolsActivity : Activity() {
     private val pastel: Boolean
         get() = Customization.isPastel(this)
 
-    private val foreground: Int
+    private val primaryTextColor: Int
         get() = if (pastel) {
             Color.rgb(55, 39, 67)
         } else {
@@ -87,7 +88,7 @@ class NetworkToolsActivity : Activity() {
             text = "Инструменты"
             textSize = 26f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(foreground)
+            setTextColor(primaryTextColor)
         }
 
         val description = TextView(this).apply {
@@ -123,7 +124,7 @@ class NetworkToolsActivity : Activity() {
         hwidToggle = CheckBox(this).apply {
             text = "Поддержка HWID (отправлять X-HWID)"
             textSize = 13f
-            setTextColor(foreground)
+            setTextColor(primaryTextColor)
             buttonTintList = android.content.res.ColorStateList.valueOf(
                 accentColor()
             )
@@ -140,7 +141,7 @@ class NetworkToolsActivity : Activity() {
         deviceToggle = CheckBox(this).apply {
             text = "Подмена устройства в HTTP-заголовках"
             textSize = 13f
-            setTextColor(foreground)
+            setTextColor(primaryTextColor)
             buttonTintList = android.content.res.ColorStateList.valueOf(
                 accentColor()
             )
@@ -268,7 +269,7 @@ class NetworkToolsActivity : Activity() {
                         ServerLatency.DEFAULT_TEST_URL
                     )
             )
-            setTextColor(foreground)
+            setTextColor(primaryTextColor)
             setHintTextColor(mutedColor())
             background = rounded(
                 if (pastel) Color.rgb(248, 243, 250)
@@ -342,7 +343,7 @@ class NetworkToolsActivity : Activity() {
             text = profile.name
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(foreground)
+            setTextColor(primaryTextColor)
         }
 
         val address = TextView(this).apply {
@@ -640,7 +641,7 @@ class NetworkToolsActivity : Activity() {
             }
 
             textSize = 13f
-            setTextColor(foreground)
+            setTextColor(primaryTextColor)
             setHintTextColor(mutedColor())
             background = rounded(
                 if (pastel) Color.rgb(248, 243, 250)
@@ -681,7 +682,7 @@ class NetworkToolsActivity : Activity() {
         return TextView(this).apply {
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(foreground)
+            setTextColor(primaryTextColor)
             background = rounded(
                 if (pastel) Color.rgb(239, 225, 246)
                 else Color.rgb(34, 43, 62),
