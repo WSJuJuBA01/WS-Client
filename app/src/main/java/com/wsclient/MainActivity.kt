@@ -15,7 +15,6 @@ import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
-import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -117,7 +116,7 @@ class MainActivity : Activity() {
     private fun buildInterface() {
         val pastel = Customization.isPastel(this)
 
-        val background = if (pastel) {
+        val screenBackground = if (pastel) {
             Color.rgb(248, 238, 249)
         } else {
             Color.rgb(13, 16, 24)
@@ -132,7 +131,7 @@ class MainActivity : Activity() {
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(18), dp(20), dp(28))
-            setBackgroundColor(background)
+            setBackgroundColor(screenBackground)
         }
 
         val scrollView = ScrollView(this).apply {
