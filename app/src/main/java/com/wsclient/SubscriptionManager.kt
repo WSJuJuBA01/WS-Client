@@ -11,11 +11,15 @@ object SubscriptionManager {
     suspend fun update(context: Context, url: String): Int =
         withContext(Dispatchers.IO) {
             val connection = URL(url).openConnection()
+
             connection.connectTimeout = 15000
             connection.readTimeout = 20000
-            connection.setRequestProperty(
-                "User-Agent",
-                SubscriptionIdentity.userAgent(context)
+
+            // Только идентификация HTTP-клиента.
+            // Остальная логика обновления не изменена.
+            SubscriptionIdentity.applyHeaders(
+                context,
+                connection
             )
 
             val body = connection.getInputStream()
@@ -23,17 +27,29 @@ object SubscriptionManager {
                 .use { it.readText() }
 
             val decoded = runCatching {
-                String(Base64.decode(body.trim(), Base64.DEFAULT))
+                String(
+                    Base64.decode(
+                        body.trim(),
+                        Base64.DEFAULT
+                    )
+                )
             }.getOrDefault(body)
 
             val profiles = decoded
                 .lineSequence()
                 .map { it.trim() }
                 .filter { it.contains("://") }
-                .mapNotNull { runCatching { ProfileCodec.parse(it) }.getOrNull() }
+                .mapNotNull {
+                    runCatching {
+                        ProfileCodec.parse(it)
+                    }.getOrNull()
+                }
                 .toList()
 
-            profiles.forEach { ProfileStore.add(context, it) }
+            profiles.forEach {
+                ProfileStore.add(context, it)
+            }
+
             profiles.size
         }
 }
