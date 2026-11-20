@@ -68,7 +68,7 @@
 
         </service>
 
-        <!-- Плитка VPN в быстрых настройках Android -->
+        <!-- Плитка VPN в быстрых настройках -->
         <service
             android:name=".QuickSettingsTileService"
             android:label="WS Client"
