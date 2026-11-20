@@ -1,6 +1,7 @@
 
 package com.wsclient
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.BroadcastReceiver
@@ -8,6 +9,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
@@ -117,6 +119,8 @@ class MainActivity : Activity() {
 
         appearanceFingerprint = currentAppearanceFingerprint()
 
+        requestNotificationPermission()
+
         if (
             savedInstanceState == null &&
             AutoConnect.enabled(this) &&
@@ -125,6 +129,22 @@ class MainActivity : Activity() {
             !XrayManager.running
         ) {
             connectVPN()
+        }
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return
+        }
+
+        if (
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                REQUEST_NOTIFICATION_PERMISSION
+            )
         }
     }
 
@@ -2286,6 +2306,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_VPN = 100
+        private const val REQUEST_NOTIFICATION_PERMISSION = 300
         private var lastTab = 0
     }
 }
