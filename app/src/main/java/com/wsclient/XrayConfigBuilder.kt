@@ -5,10 +5,7 @@ import org.json.JSONObject
 
 object XrayConfigBuilder {
 
-    fun build(
-        profile: ServerProfile,
-        outboundInterface: String
-    ): String {
+    fun build(profile: ServerProfile): String {
         val config = JSONObject()
 
         config.put(
@@ -26,19 +23,8 @@ object XrayConfigBuilder {
                         "settings",
                         JSONObject().apply {
                             put("name", "ws-tun")
-                            put("mtu", 1500)
-                            put(
-                                "gateway",
-                                JSONArray().put("10.0.0.1/30")
-                            )
-                            put(
-                                "dns",
-                                JSONArray().put("1.1.1.1")
-                            )
-                            put(
-                                "autoOutboundsInterface",
-                                outboundInterface
-                            )
+                            put("MTU", 1500)
+                            put("userLevel", 0)
                         }
                     )
                 }
