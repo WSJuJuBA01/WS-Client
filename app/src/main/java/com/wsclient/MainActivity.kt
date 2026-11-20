@@ -1,4 +1,3 @@
-
 package com.wsclient
 
 import android.Manifest
@@ -35,6 +34,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 private const val MP = -1
 private const val WC = -2
+
 private val GREEN = Color.rgb(64, 190, 132)
 private val RED = Color.rgb(235, 91, 91)
 private val AMBER = Color.rgb(240, 180, 60)
@@ -43,9 +43,20 @@ class MainActivity : Activity() {
 
     private val palette by lazy { Customization.palette(this) }
     private val accent by lazy { Customization.accent(this) }
-    private val inner get() = Ui.mix(palette.surface, palette.foreground, 0.08f)
-    private val activeColor get() =
-        if (palette.isLight) accent else Ui.mix(accent, Color.WHITE, 0.3f)
+
+    private val inner
+        get() = Ui.mix(
+            palette.surface,
+            palette.foreground,
+            0.08f
+        )
+
+    private val activeColor
+        get() = if (palette.isLight) {
+            accent
+        } else {
+            Ui.mix(accent, Color.WHITE, 0.3f)
+        }
 
     private lateinit var pages: List<ScrollView>
     private lateinit var navGlyphs: List<GlyphView>
@@ -64,7 +75,13 @@ class MainActivity : Activity() {
     private lateinit var statDownSpeed: TextView
     private lateinit var statTime: TextView
 
-    private val pingResults = ConcurrentHashMap<String, Long>() // -1 = ошибка
+    // -1 = ошибка проверки.
+    private val pingResults =
+        ConcurrentHashMap<String, Long>()
+
+    // ID серверов, для которых проверка уже выполняется.
+    private val pingingIds =
+        ConcurrentHashMap.newKeySet<String>()
 
     private var selectedId: String? = null
     private var titleClicks = 0
@@ -79,12 +96,16 @@ class MainActivity : Activity() {
             if (connectionState == VPNService.STATE_CONNECTED) {
                 refreshTraffic()
             }
+
             trafficHandler.postDelayed(this, 1000L)
         }
     }
 
     private val stateReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
+        override fun onReceive(
+            context: Context?,
+            intent: Intent?
+        ) {
             if (intent?.action != VPNService.ACTION_STATE) return
 
             connectionState =
@@ -439,12 +460,14 @@ class MainActivity : Activity() {
                 if (i == index) activeColor else palette.muted
             )
 
-            label.typeface =
+            label.typeface = Typeface.create(
                 if (i == index) {
-                    Typeface.DEFAULT_BOLD
+                    "sans-serif-medium"
                 } else {
-                    Typeface.DEFAULT
-                }
+                    "sans-serif"
+                },
+                Typeface.NORMAL
+            )
         }
     }
 
@@ -1013,6 +1036,24 @@ class MainActivity : Activity() {
             )
 
             card.addView(actions)
+        } else {
+            // Для отдельных серверов тоже доступна
+            // массовая проверка пинга.
+            card.space(14)
+
+            val actions = row()
+
+            actions.addView(
+                groupButton(
+                    Glyph.GAUGE,
+                    "Пинг"
+                ) {
+                    pingServers(members)
+                },
+                lp(MP, dp(68))
+            )
+
+            card.addView(actions)
         }
 
         if (!collapsed) {
@@ -1138,29 +1179,75 @@ class MainActivity : Activity() {
             }
         )
 
+        // Статус выбранного сервера не скрывает результат пинга.
         if (selected) {
             row.addView(
                 badge("Выбран", GREEN)
             )
-        } else {
-            pingResults[profile.id]?.let { ms ->
-                val color = when {
-                    ms < 0 -> RED
-                    ms < 250 -> GREEN
-                    ms < 600 -> AMBER
-                    else -> RED
-                }
-
-                row.addView(
-                    text(
-                        if (ms < 0) "ошибка" else "$ms мс",
-                        12f,
-                        color,
-                        true
-                    )
-                )
-            }
         }
+
+        val isPinging = profile.id in pingingIds
+        val pingResult = pingResults[profile.id]
+
+        val pingLabel = when {
+            isPinging -> "…"
+            pingResult == null -> null
+            pingResult < 0L -> "ошибка"
+            else -> "$pingResult мс"
+        }
+
+        if (pingLabel != null) {
+            val pingColor = when {
+                isPinging -> palette.muted
+                pingResult == null -> palette.muted
+                pingResult < 0L -> RED
+                pingResult < 250L -> GREEN
+                pingResult < 600L -> AMBER
+                else -> RED
+            }
+
+            row.addView(
+                text(
+                    pingLabel,
+                    12f,
+                    pingColor,
+                    true
+                ).apply {
+                    setPadding(
+                        dp(6),
+                        0,
+                        dp(4),
+                        0
+                    )
+                }
+            )
+        }
+
+        // Отдельная кнопка проверки конкретного сервера.
+        val pingButton = FrameLayout(this).apply {
+            contentDescription =
+                "Проверить пинг сервера ${profile.name}"
+
+            addView(
+                GlyphView(
+                    this@MainActivity,
+                    Glyph.GAUGE,
+                    if (isPinging) activeColor else palette.muted
+                ),
+                FrameLayout.LayoutParams(
+                    dp(23),
+                    dp(23),
+                    Gravity.CENTER
+                )
+            )
+        }.onTap {
+            pingServers(listOf(profile))
+        }
+
+        row.addView(
+            pingButton,
+            lp(dp(32), dp(32))
+        )
 
         parent.addView(
             row,
@@ -1194,21 +1281,61 @@ class MainActivity : Activity() {
     private fun pingServers(
         members: List<ServerProfile>
     ) {
+        // Не запускаем повторные проверки одного сервера.
+        val targets = members
+            .distinctBy { it.id }
+            .filter { profile ->
+                pingingIds.add(profile.id)
+            }
+
+        if (targets.isEmpty()) {
+            showMessage(
+                "Проверка этих серверов уже выполняется"
+            )
+            return
+        }
+
+        refreshProfiles()
+
         showMessage(
-            "Проверяю ${members.size} серверов…"
+            "Проверяю ${targets.size} серверов…"
         )
 
+        // Проверки выполняются последовательно:
+        // это снижает нагрузку на слабые устройства.
         Thread {
-            members.forEach { profile ->
-                pingResults[profile.id] =
-                    runCatching {
-                        ServerLatency.check(profile)
-                    }.getOrDefault(-1L)
+            var successful = 0
+            var failed = 0
+
+            targets.forEach { profile ->
+                val result = runCatching {
+                    ServerLatency.check(profile)
+                }.getOrDefault(-1L)
+
+                pingResults[profile.id] = result
+                pingingIds.remove(profile.id)
+
+                if (result >= 0L) {
+                    successful++
+                } else {
+                    failed++
+                }
 
                 runOnUiThread {
-                    if (!isFinishing) {
+                    if (!isFinishing && !isDestroyed) {
                         refreshProfiles()
                     }
+                }
+            }
+
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    showMessage(
+                        "Проверка завершена: " +
+                            "$successful успешно, $failed с ошибкой"
+                    )
+
+                    refreshProfiles()
                 }
             }
         }.start()
@@ -1657,6 +1784,10 @@ class MainActivity : Activity() {
                 text = "Настроить эмуляцию клиента →"
                 textSize = 13f
                 setTextColor(accent)
+                typeface = Typeface.create(
+                    "sans-serif-medium",
+                    Typeface.NORMAL
+                )
 
                 setPadding(
                     0,
@@ -1911,6 +2042,9 @@ class MainActivity : Activity() {
                     this,
                     profile.id
                 )
+
+                pingResults.remove(profile.id)
+                pingingIds.remove(profile.id)
 
                 if (selectedId == profile.id) {
                     selectedId = null
@@ -2279,9 +2413,16 @@ class MainActivity : Activity() {
             textSize = size
             setTextColor(color)
 
-            if (bold) {
-                typeface = Typeface.DEFAULT_BOLD
-            }
+            typeface = Typeface.create(
+                if (bold) {
+                    "sans-serif-medium"
+                } else {
+                    "sans-serif"
+                },
+                Typeface.NORMAL
+            )
+
+            includeFontPadding = true
         }
 
     private fun rounded(
