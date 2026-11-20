@@ -90,6 +90,7 @@ class AppearanceActivity : Activity() {
         root.addView(space(16))
         root.addView(action("ГОТОВО", Customization.accent(this), Color.WHITE) { finish() })
         setContentView(scroll)
+        Ui.prepareWindow(this, palette); Ui.padWithInsets(root)
         applyWallpaperPreview()
     }
 
