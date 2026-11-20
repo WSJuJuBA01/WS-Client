@@ -33,11 +33,11 @@ object Customization {
     val presets = listOf(
         Palette(
             "midnight", "Midnight",
-            Color.rgb(13, 16, 24),
-            Color.rgb(24, 29, 41),
+            Color.rgb(15, 20, 32),
+            Color.rgb(29, 39, 57),
             Color.rgb(242, 245, 250),
-            Color.rgb(145, 157, 180),
-            Color.rgb(76, 116, 245),
+            Color.rgb(138, 152, 178),
+            Color.rgb(58, 123, 200),
             false
         ),
         Palette(
