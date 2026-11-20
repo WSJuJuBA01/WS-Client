@@ -6,8 +6,6 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -56,12 +54,6 @@ class VPNService : VpnService() {
                 ?: profiles.firstOrNull()
                 ?: error("Нет серверов. Сначала импортируй профиль.")
 
-            val interfaceName = getPhysicalInterfaceName()
-                ?: error(
-                    "Не удалось определить сетевой интерфейс. " +
-                        "Проверь подключение к Wi-Fi или мобильной сети."
-                )
-
             val builder = Builder()
                 .setSession("WS Client")
                 .setMtu(1500)
@@ -86,6 +78,9 @@ class VPNService : VpnService() {
                 )
             }
 
+            // Сам Xray должен ходить мимо туннеля, иначе будет петля
+            if (!allowList) builder.addDisallowedApplication(packageName)
+
             if (packages.isNotEmpty()) {
                 SplitTunneling.apply(
                     builder,
@@ -100,12 +95,10 @@ class VPNService : VpnService() {
 
             tun = descriptor
 
-            val config = XrayConfigBuilder.build(
-                profile,
-                interfaceName
+            XrayManager.start(
+                XrayConfigBuilder.build(profile),
+                descriptor.fd
             )
-
-            XrayManager.start(config, descriptor.fd)
 
             check(XrayManager.running) {
                 "Xray не перешёл в рабочее состояние"
@@ -148,43 +141,6 @@ class VPNService : VpnService() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-    }
-
-    private fun getPhysicalInterfaceName(): String? {
-        val connectivityManager =
-            getSystemService(Context.CONNECTIVITY_SERVICE)
-                as ConnectivityManager
-
-        val candidates = buildList {
-            connectivityManager.activeNetwork?.let { add(it) }
-
-            connectivityManager.allNetworks.forEach {
-                if (it !in this) add(it)
-            }
-        }
-
-        for (network in candidates) {
-            val capabilities =
-                connectivityManager.getNetworkCapabilities(network)
-                    ?: continue
-
-            if (!capabilities.hasCapability(
-                    NetworkCapabilities.NET_CAPABILITY_INTERNET
-                )
-            ) continue
-
-            if (capabilities.hasTransport(
-                    NetworkCapabilities.TRANSPORT_VPN
-                )
-            ) continue
-
-            val name =
-                connectivityManager.getLinkProperties(network)?.interfaceName
-
-            if (!name.isNullOrBlank()) return name
-        }
-
-        return null
     }
 
     private fun stopTunnel() {
