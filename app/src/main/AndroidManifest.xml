@@ -1,19 +1,18 @@
-
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Сеть -->
+    <!-- Network access -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Фоновая работа VPN -->
+    <!-- VPN foreground service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
-    <!-- Уведомления -->
+    <!-- Notifications on Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Доступ к списку установленных приложений -->
+    <!-- App list access for split tunneling -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
     <application
@@ -24,7 +23,7 @@
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="false">
 
-        <!-- Главное окно -->
+        <!-- Main activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -36,22 +35,22 @@
 
         </activity>
 
-        <!-- Сетевые инструменты -->
+        <!-- Network tools -->
         <activity
             android:name=".NetworkToolsActivity"
             android:exported="false" />
 
-        <!-- Настройки внешнего вида -->
+        <!-- Appearance settings -->
         <activity
             android:name=".AppearanceActivity"
             android:exported="false" />
 
-        <!-- Раздельное туннелирование -->
+        <!-- Split tunneling -->
         <activity
             android:name=".SplitTunnelingActivity"
             android:exported="false" />
 
-        <!-- VPN-служба -->
+        <!-- VPN service -->
         <service
             android:name=".VPNService"
             android:permission="android.permission.BIND_VPN_SERVICE"
@@ -68,7 +67,7 @@
 
         </service>
 
-        <!-- Плитка VPN в быстрых настройках -->
+        <!-- Quick Settings VPN tile -->
         <service
             android:name=".QuickSettingsTileService"
             android:label="WS Client"
