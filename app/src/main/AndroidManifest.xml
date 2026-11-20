@@ -1,20 +1,30 @@
+
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Сеть -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Фоновая работа VPN -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- Уведомления -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Доступ к списку установленных приложений -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
     <application
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:allowBackup="false"
         android:label="WS Client"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="false">
 
+        <!-- Главное окно -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -26,18 +36,22 @@
 
         </activity>
 
+        <!-- Сетевые инструменты -->
         <activity
             android:name=".NetworkToolsActivity"
             android:exported="false" />
 
+        <!-- Настройки внешнего вида -->
         <activity
             android:name=".AppearanceActivity"
             android:exported="false" />
 
+        <!-- Раздельное туннелирование -->
         <activity
             android:name=".SplitTunnelingActivity"
             android:exported="false" />
 
+        <!-- VPN-служба -->
         <service
             android:name=".VPNService"
             android:permission="android.permission.BIND_VPN_SERVICE"
@@ -54,5 +68,20 @@
 
         </service>
 
+        <!-- Плитка VPN в быстрых настройках Android -->
+        <service
+            android:name=".QuickSettingsTileService"
+            android:label="WS Client"
+            android:icon="@mipmap/ic_launcher"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+
+        </service>
+
     </application>
+
 </manifest>
