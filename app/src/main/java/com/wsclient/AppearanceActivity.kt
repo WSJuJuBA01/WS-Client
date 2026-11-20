@@ -1,3 +1,4 @@
+
 package com.wsclient
 
 import android.app.Activity
@@ -15,8 +16,11 @@ import android.widget.TextView
 import android.widget.Toast
 
 class AppearanceActivity : Activity() {
+
     private lateinit var root: LinearLayout
-    private val palette get() = Customization.palette(this)
+
+    private val palette
+        get() = Customization.palette(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,7 +30,12 @@ class AppearanceActivity : Activity() {
     private fun buildUi() {
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(20), dp(20), dp(28))
+            setPadding(
+                dp(20),
+                dp(20),
+                dp(20),
+                dp(28)
+            )
             setBackgroundColor(palette.background)
         }
 
@@ -50,9 +59,9 @@ class AppearanceActivity : Activity() {
             text = "Автоподключение при запуске WS Client"
             textSize = 13f
             setTextColor(palette.foreground)
-            isChecked = AutoConnect.enabled(
-                this@AppearanceActivity
-            )
+
+            isChecked = AutoConnect.enabled(this@AppearanceActivity)
+
             setOnCheckedChangeListener { _, checked ->
                 AutoConnect.setEnabled(
                     this@AppearanceActivity,
@@ -62,6 +71,26 @@ class AppearanceActivity : Activity() {
         }
 
         root.addView(autoConnect)
+
+        root.addView(
+            action(
+                if (palette.isLight) {
+                    "Переключить на тёмную тему"
+                } else {
+                    "Переключить на светлую тему"
+                },
+                Customization.accent(this),
+                Color.WHITE
+            ) {
+                Customization.setPreset(
+                    this,
+                    if (palette.isLight) "midnight" else "pastel"
+                )
+                buildUi()
+            }
+        )
+
+        root.addView(space(10))
         root.addView(label("ТЕМА", 11, true))
 
         Customization.presets.forEach { preset ->
@@ -75,6 +104,7 @@ class AppearanceActivity : Activity() {
                     buildUi()
                 }
             )
+
             root.addView(space(7))
         }
 
@@ -111,9 +141,7 @@ class AppearanceActivity : Activity() {
                 palette.surface,
                 palette.foreground
             ) {
-                val intent = Intent(
-                    Intent.ACTION_OPEN_DOCUMENT
-                ).apply {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
                     type = "image/*"
                     addFlags(
@@ -122,10 +150,7 @@ class AppearanceActivity : Activity() {
                     )
                 }
 
-                startActivityForResult(
-                    intent,
-                    REQUEST_WALLPAPER
-                )
+                startActivityForResult(intent, REQUEST_WALLPAPER)
             }
         )
 
@@ -151,11 +176,7 @@ class AppearanceActivity : Activity() {
         )
 
         root.addView(
-            slider(
-                0,
-                90,
-                Customization.dim(this)
-            ) {
+            slider(0, 90, Customization.dim(this)) {
                 Customization.setDim(this, it)
             }
         )
@@ -200,11 +221,13 @@ class AppearanceActivity : Activity() {
         val input = EditText(this).apply {
             hint = "#RRGGBB"
             setSingleLine(true)
+
             setText(
                 String.format(
                     "#%06X",
-                    0xFFFFFF and
-                        Customization.accent(this@AppearanceActivity)
+                    0xFFFFFF and Customization.accent(
+                        this@AppearanceActivity
+                    )
                 )
             )
         }
@@ -214,9 +237,7 @@ class AppearanceActivity : Activity() {
             .setView(input)
             .setPositiveButton("Применить") { _, _ ->
                 val color = runCatching {
-                    Color.parseColor(
-                        input.text.toString().trim()
-                    )
+                    Color.parseColor(input.text.toString().trim())
                 }.getOrNull()
 
                 if (color == null) {
@@ -246,6 +267,7 @@ class AppearanceActivity : Activity() {
 
             setOnSeekBarChangeListener(
                 object : SeekBar.OnSeekBarChangeListener {
+
                     override fun onProgressChanged(
                         seekBar: SeekBar?,
                         progress: Int,
@@ -282,7 +304,9 @@ class AppearanceActivity : Activity() {
         if (
             requestCode != REQUEST_WALLPAPER ||
             resultCode != RESULT_OK
-        ) return
+        ) {
+            return
+        }
 
         val uri: Uri = data?.data ?: return
 
@@ -307,38 +331,46 @@ class AppearanceActivity : Activity() {
         textValue: String,
         size: Int,
         bold: Boolean
-    ) = TextView(this).apply {
-        text = textValue
-        textSize = size.toFloat()
-        setTextColor(palette.foreground)
+    ) =
+        TextView(this).apply {
+            text = textValue
+            textSize = size.toFloat()
+            setTextColor(palette.foreground)
 
-        if (bold) {
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            if (bold) {
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+            }
         }
-    }
 
     private fun action(
         textValue: String,
         bg: Int,
         fg: Int,
         click: () -> Unit
-    ) = TextView(this).apply {
-        text = textValue
-        textSize = 14f
-        gravity = Gravity.CENTER_VERTICAL
-        setTextColor(fg)
-        setPadding(dp(15), dp(15), dp(15), dp(15))
+    ) =
+        TextView(this).apply {
+            text = textValue
+            textSize = 14f
+            gravity = Gravity.CENTER_VERTICAL
+            setTextColor(fg)
 
-        background =
-            android.graphics.drawable.GradientDrawable().apply {
-                setColor(bg)
-                cornerRadius = dp(14).toFloat()
-            }
+            setPadding(
+                dp(15),
+                dp(15),
+                dp(15),
+                dp(15)
+            )
 
-        isClickable = true
-        isFocusable = true
-        setOnClickListener { click() }
-    }
+            background =
+                android.graphics.drawable.GradientDrawable().apply {
+                    setColor(bg)
+                    cornerRadius = dp(14).toFloat()
+                }
+
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { click() }
+        }
 
     private fun space(h: Int) =
         View(this).apply {
@@ -348,7 +380,7 @@ class AppearanceActivity : Activity() {
             )
         }
 
-    private fun dp(v: Int) =
+    private fun dp(v: Int): Int =
         (v * resources.displayMetrics.density).toInt()
 
     companion object {
