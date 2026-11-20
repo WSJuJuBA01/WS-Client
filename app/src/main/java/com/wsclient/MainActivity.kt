@@ -1,20 +1,21 @@
+
 package com.wsclient
 
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.os.Handler
-import android.os.Looper
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -23,7 +24,6 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import android.widget.PopupMenu
 import java.util.Locale
 
 class MainActivity : Activity() {
@@ -38,6 +38,8 @@ class MainActivity : Activity() {
     private var selectedId: String? = null
     private var titleClicks = 0
     private var receiverRegistered = false
+    private var connectionState = VPNService.STATE_DISCONNECTED
+    private var appearanceFingerprint = ""
 
     private val trafficHandler = Handler(Looper.getMainLooper())
 
@@ -50,27 +52,25 @@ class MainActivity : Activity() {
         }
     }
 
-    private var connectionState =
-        VPNService.STATE_DISCONNECTED
-
-    private var appearanceFingerprint: String = ""
-
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != VPNService.ACTION_STATE) return
 
-            val state = intent.getStringExtra(
+            connectionState = intent.getStringExtra(
                 VPNService.EXTRA_STATE
             ) ?: return
 
-            val message = intent.getStringExtra(
-                VPNService.EXTRA_MESSAGE
+            updateConnectionUi(
+                intent.getStringExtra(VPNService.EXTRA_MESSAGE)
             )
-
-            connectionState = state
-            updateConnectionUi(message)
         }
     }
+
+    private val palette
+        get() = Customization.palette(this)
+
+    private val accent
+        get() = Customization.accent(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -80,12 +80,11 @@ class MainActivity : Activity() {
             MODE_PRIVATE
         ).getString("active_profile", null)
 
-        connectionState =
-            if (XrayManager.running) {
-                VPNService.STATE_CONNECTED
-            } else {
-                VPNService.STATE_DISCONNECTED
-            }
+        connectionState = if (XrayManager.running) {
+            VPNService.STATE_CONNECTED
+        } else {
+            VPNService.STATE_DISCONNECTED
+        }
 
         buildInterface()
         refreshProfiles()
@@ -106,9 +105,7 @@ class MainActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
-
         registerStateReceiver()
-
         trafficHandler.removeCallbacks(trafficUpdater)
         trafficHandler.post(trafficUpdater)
     }
@@ -116,7 +113,6 @@ class MainActivity : Activity() {
     override fun onStop() {
         trafficHandler.removeCallbacks(trafficUpdater)
         unregisterStateReceiver()
-
         super.onStop()
     }
 
@@ -141,8 +137,8 @@ class MainActivity : Activity() {
 
     private fun currentAppearanceFingerprint(): String {
         return listOf(
-            Customization.palette(this).id,
-            Customization.accent(this),
+            palette.id,
+            accent,
             Customization.wallpaper(this)?.toString().orEmpty(),
             Customization.dim(this),
             Customization.cardAlpha(this)
@@ -171,53 +167,107 @@ class MainActivity : Activity() {
     private fun unregisterStateReceiver() {
         if (!receiverRegistered) return
 
-        try {
+        runCatching {
             unregisterReceiver(stateReceiver)
-        } catch (_: Exception) {
         }
 
         receiverRegistered = false
     }
 
-    private fun buildInterface() {
-        val palette = Customization.palette(this)
-        val pastel = palette.isLight
-        val screenBackground = palette.background
-        val foreground = palette.foreground
+    // ---------------------------------------------------------
+    // Main screen
+    // ---------------------------------------------------------
 
+    private fun buildInterface() {
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(18), dp(20), dp(28))
-            setBackgroundColor(screenBackground)
+            setBackgroundColor(palette.background)
         }
 
-        applyWallpaperBackground(root)
+        Customization.applyWallpaper(this, root)
 
-        val scrollView = ScrollView(this).apply {
+        val scroll = ScrollView(this).apply {
             isFillViewport = true
+            clipToPadding = false
             addView(root)
         }
 
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+        buildHeader()
+        addSpace(24)
+
+        buildConnectionCard()
+        addSpace(12)
+
+        buildTrafficCard()
+        addSpace(26)
+
+        val section = row {
+            text(
+                "МОИ СЕРВЕРЫ",
+                11f,
+                palette.muted,
+                true
+            ).apply {
+                letterSpacing = 1.3f
+            }
+
+            addView(
+                View(this@MainActivity),
+                LinearLayout.LayoutParams(0, 1, 1f)
+            )
+
+            text(
+                "XRAY CORE",
+                9f,
+                palette.muted,
+                true
+            )
         }
+
+        root.addView(section)
+        addSpace(12)
+
+        serverContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        root.addView(serverContainer)
+
+        addSpace(22)
+
+        text(
+            "WS CLIENT",
+            10f,
+            palette.muted,
+            true
+        ).apply {
+            gravity = Gravity.CENTER
+            letterSpacing = 1.5f
+            root.addView(this)
+        }
+
+        setContentView(scroll)
+    }
+
+    private fun buildHeader() {
+        val header = row()
 
         val titleBlock = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+                -2,
                 1f
             )
         }
 
-        val title = TextView(this).apply {
-            text = "WS Client"
-            textSize = 27f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(foreground)
-
+        val title = text(
+            "WS Client",
+            28f,
+            palette.foreground,
+            true
+        ).apply {
             setOnClickListener {
                 titleClicks++
 
@@ -229,60 +279,29 @@ class MainActivity : Activity() {
             }
         }
 
-        val subtitle = TextView(this).apply {
-            text = "YOUR PRIVATE CONNECTION"
-            textSize = 10f
-            letterSpacing = 1.5f
-            setTextColor(mutedColor(pastel))
-            setPadding(0, dp(4), 0, 0)
-        }
-
         titleBlock.addView(title)
-        titleBlock.addView(subtitle)
 
-        val version = TextView(this).apply {
-            text = "WS"
-            textSize = 13f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setTextColor(foreground)
-
-            background = rounded(
-                if (pastel) {
-                    Color.rgb(232, 211, 241)
-                } else {
-                    Color.rgb(34, 43, 62)
-                },
-                dp(14)
-            )
-
-            layoutParams = LinearLayout.LayoutParams(
-                dp(44),
-                dp(44)
-            )
-        }
+        titleBlock.addView(
+            text(
+                "YOUR PRIVATE CONNECTION",
+                9f,
+                palette.muted,
+                true
+            ).apply {
+                letterSpacing = 1.4f
+                setPadding(0, dp(4), 0, 0)
+            }
+        )
 
         header.addView(titleBlock)
-        header.addView(version)
 
-        val headerActions = LinearLayout(this).apply {
+        val actions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
         }
 
-        val settingsButton = TextView(this).apply {
-            text = "⚙"
-            textSize = 22f
-            gravity = Gravity.CENTER
-            setTextColor(foreground)
-            background = rounded(palette.surface, dp(14))
-
-            layoutParams = LinearLayout.LayoutParams(
-                dp(44),
-                dp(42)
-            )
-
-            setOnClickListener {
+        actions.addView(
+            iconButton("⚙", palette.surface) {
                 startActivity(
                     Intent(
                         this@MainActivity,
@@ -290,92 +309,75 @@ class MainActivity : Activity() {
                     )
                 )
             }
+        )
+
+        val add = iconButton("+", accent, Color.WHITE) {
+            showAddMenu()
         }
 
-        headerActions.addView(settingsButton)
+        add.textSize = 26f
 
-        val addButton = TextView(this).apply {
-            text = "+"
-            textSize = 25f
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-
-            background = rounded(
-                Customization.accent(this@MainActivity),
-                dp(14)
-            )
-
-            layoutParams = LinearLayout.LayoutParams(
-                dp(44),
-                dp(42)
+        actions.addView(
+            add,
+            LinearLayout.LayoutParams(
+                dp(46),
+                dp(44)
             ).apply {
-                topMargin = dp(6)
+                topMargin = dp(7)
             }
+        )
 
-            contentDescription = "Добавить сервер или подписку"
-
-            setOnClickListener {
-                showAddMenu(this)
-            }
-        }
-
-        headerActions.addView(addButton)
-        header.addView(headerActions)
-
+        header.addView(actions)
         root.addView(header)
-        root.addView(space(24))
+    }
 
-        val statusCard = card(pastel)
+    private fun buildConnectionCard() {
+        val card = makeCard()
 
-        val statusCaption = TextView(this).apply {
-            text = "СОСТОЯНИЕ ПОДКЛЮЧЕНИЯ"
-            textSize = 10f
-            letterSpacing = 1.3f
-            setTextColor(mutedColor(pastel))
-        }
+        card.addView(
+            text(
+                "СОСТОЯНИЕ ПОДКЛЮЧЕНИЯ",
+                10f,
+                palette.muted,
+                true
+            ).apply {
+                letterSpacing = 1.2f
+            }
+        )
 
-        statusText = TextView(this).apply {
-            text = "Отключено"
-            textSize = 25f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(foreground)
+        statusText = text(
+            "Отключено",
+            25f,
+            palette.foreground,
+            true
+        ).apply {
             setPadding(0, dp(12), 0, dp(4))
         }
 
-        statusDescription = TextView(this).apply {
-            text = "Выберите сервер и подключитесь"
-            textSize = 13f
-            setTextColor(mutedColor(pastel))
-        }
+        statusDescription = text(
+            "Выберите сервер и подключитесь",
+            12f,
+            palette.muted
+        )
 
-        statusCard.addView(statusCaption)
-        statusCard.addView(statusText)
-        statusCard.addView(statusDescription)
+        card.addView(statusText)
+        card.addView(statusDescription)
 
-        root.addView(statusCard)
-        root.addView(space(14))
+        root.addView(card)
 
-        val connectCard = card(pastel)
+        addSpace(12)
 
-        connectButton = TextView(this).apply {
-            text = "ПОДКЛЮЧИТЬСЯ"
-            textSize = 15f
-            typeface = Typeface.DEFAULT_BOLD
+        val connectCard = makeCard()
+
+        connectButton = text(
+            "ПОДКЛЮЧИТЬСЯ",
+            14f,
+            Color.WHITE,
+            true
+        ).apply {
             gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-
-            background = rounded(
-                Customization.accent(this@MainActivity),
-                dp(17)
-            )
-
-            setPadding(
-                dp(16),
-                dp(19),
-                dp(16),
-                dp(19)
-            )
-
+            setPadding(dp(16), dp(18), dp(16), dp(18))
+            background = rounded(accent, 17)
             isClickable = true
             isFocusable = true
 
@@ -391,249 +393,755 @@ class MainActivity : Activity() {
 
         connectCard.addView(connectButton)
 
-        val disconnectHint = TextView(this).apply {
-            text = "Нажми кнопку ещё раз, чтобы отключиться"
-            textSize = 11f
-            gravity = Gravity.CENTER
-            setTextColor(mutedColor(pastel))
-            setPadding(0, dp(10), 0, 0)
-        }
-
-        connectCard.addView(disconnectHint)
-        root.addView(connectCard)
-
-        root.addView(space(14))
-
-        val trafficCard = card(pastel)
-
-        val trafficTitle = TextView(this).apply {
-            text = "ТРАФИК СЕАНСА"
-            textSize = 10f
-            letterSpacing = 1.3f
-            setTextColor(mutedColor(pastel))
-        }
-
-        trafficText = TextView(this).apply {
-            text = "↑ 0 B       ↓ 0 B"
-            textSize = 16f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(foreground)
-            setPadding(0, dp(12), 0, 0)
-        }
-
-        trafficCard.addView(trafficTitle)
-        trafficCard.addView(trafficText)
-
-        root.addView(trafficCard)
-        root.addView(space(26))
-
-        val serversHeader = sectionHeader(
-            "МОИ СЕРВЕРЫ",
-            pastel
+        connectCard.addView(
+            text(
+                "Нажмите ещё раз, чтобы отключиться",
+                10f,
+                palette.muted
+            ).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, dp(10), 0, 0)
+            }
         )
 
-        root.addView(serversHeader)
+        root.addView(connectCard)
+    }
 
-        serverContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
+    private fun buildTrafficCard() {
+        val card = makeCard()
 
-        root.addView(serverContainer)
-        root.addView(space(12))
+        card.addView(
+            text(
+                "ТРАФИК СЕАНСА",
+                10f,
+                palette.muted,
+                true
+            ).apply {
+                letterSpacing = 1.2f
+            }
+        )
 
-        root.addView(space(8))
-        root.addView(space(22))
-
-        val footer = TextView(this).apply {
-            text = "WS CLIENT  •  XRAY CORE"
-            textSize = 10f
-            letterSpacing = 1.2f
-            gravity = Gravity.CENTER
-            setTextColor(mutedColor(pastel))
+        trafficText = text(
+            "↑ 0 B       ↓ 0 B",
+            15f,
+            palette.foreground,
+            true
+        ).apply {
             setPadding(0, dp(12), 0, 0)
         }
 
-        root.addView(footer)
-
-        setContentView(scrollView)
+        card.addView(trafficText)
+        root.addView(card)
     }
 
-    private fun card(pastel: Boolean): LinearLayout {
-        return LinearLayout(this).apply {
+    // ---------------------------------------------------------
+    // Add menu
+    // ---------------------------------------------------------
+
+    private fun showAddMenu() {
+        val options = arrayOf(
+            "Вставить из буфера обмена",
+            "Добавить вручную",
+            "Добавить подписку",
+            "Настройки эмуляции клиента",
+            "Раздельное туннелирование"
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle("Добавить")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> pasteFromClipboard()
+                    1 -> importProfile()
+                    2 -> showSubscriptionDialog()
+                    3 -> startActivity(
+                        Intent(
+                            this,
+                            NetworkToolsActivity::class.java
+                        )
+                    )
+                    4 -> startActivity(
+                        Intent(
+                            this,
+                            SplitTunnelingActivity::class.java
+                        )
+                    )
+                }
+            }
+            .show()
+    }
+
+    private fun pasteFromClipboard() {
+        val clipboard = getSystemService(
+            Context.CLIPBOARD_SERVICE
+        ) as ClipboardManager
+
+        val value = clipboard.primaryClip
+            ?.takeIf { it.itemCount > 0 }
+            ?.getItemAt(0)
+            ?.coerceToText(this)
+            ?.toString()
+            ?.trim()
+
+        if (value.isNullOrBlank()) {
+            showMessage("Буфер обмена пуст")
+            return
+        }
+
+        importProfileValue(value)
+    }
+
+    private fun importProfile() {
+        val input = EditText(this).apply {
+            hint = "vless://, vmess://, trojan://, ss://"
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            minLines = 3
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Добавить сервер")
+            .setMessage("Вставьте ссылку конфигурации")
+            .setView(input)
+            .setPositiveButton("Добавить") { _, _ ->
+                importProfileValue(
+                    input.text.toString().trim()
+                )
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun importProfileValue(value: String) {
+        try {
+            val profile = ProfileCodec.parse(value)
+            val stored = ProfileStore.add(this, profile)
+
+            selectedId = stored.id
+
+            getSharedPreferences(
+                "ws_settings",
+                MODE_PRIVATE
+            ).edit()
+                .putString("active_profile", stored.id)
+                .apply()
+
+            refreshProfiles()
+            showMessage("Сервер добавлен")
+        } catch (e: Exception) {
+            showMessage("Ошибка импорта: ${e.message}")
+        }
+    }
+
+    // ---------------------------------------------------------
+    // Subscriptions
+    // ---------------------------------------------------------
+
+    private fun showSubscriptionDialog(
+        existing: SubscriptionGroup? = null
+    ) {
+        val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(
-                dp(18),
-                dp(18),
-                dp(18),
-                dp(18)
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+
+        val urlInput = EditText(this).apply {
+            hint = "https://example.com/subscription"
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_VARIATION_URI
+
+            if (existing != null) {
+                setText(existing.url)
+            }
+        }
+
+        val titleInput = EditText(this).apply {
+            hint = "Название подписки (необязательно)"
+
+            if (existing != null) {
+                setText(existing.title)
+            }
+        }
+
+        panel.addView(urlInput)
+        panel.addView(titleInput)
+
+        val emulate = TextView(this).apply {
+            text = "Настроить эмуляцию клиента →"
+            textSize = 13f
+            setTextColor(accent)
+            setPadding(0, dp(15), 0, dp(8))
+            setOnClickListener {
+                startActivity(
+                    Intent(
+                        this@MainActivity,
+                        NetworkToolsActivity::class.java
+                    )
+                )
+            }
+        }
+
+        panel.addView(emulate)
+
+        AlertDialog.Builder(this)
+            .setTitle(
+                if (existing == null) {
+                    "Новая подписка"
+                } else {
+                    "Изменить подписку"
+                }
+            )
+            .setView(panel)
+            .setPositiveButton(
+                if (existing == null) "Добавить" else "Сохранить"
+            ) { _, _ ->
+                val url = urlInput.text.toString().trim()
+                val title = titleInput.text.toString().trim()
+
+                if (!url.startsWith("https://") &&
+                    !url.startsWith("http://")
+                ) {
+                    showMessage("Укажите корректный URL подписки")
+                    return@setPositiveButton
+                }
+
+                if (existing == null) {
+                    updateSubscription(url, title)
+                } else {
+                    changeSubscriptionUrl(
+                        existing,
+                        url,
+                        title
+                    )
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun updateSubscription(
+        url: String,
+        customTitle: String = ""
+    ) {
+        showMessage("Загружаю подписку…")
+
+        Thread {
+            try {
+                val result = kotlinx.coroutines.runBlocking {
+                    SubscriptionManager.updateDetailed(
+                        this@MainActivity,
+                        url
+                    )
+                }
+
+                if (customTitle.isNotBlank()) {
+                    SubscriptionStore.rename(
+                        this@MainActivity,
+                        SubscriptionStore.idFor(url),
+                        customTitle
+                    )
+                }
+
+                runOnUiThread {
+                    refreshProfiles()
+                    showMessage(
+                        "Импортировано серверов: ${result.imported}"
+                    )
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    showMessage(
+                        "Ошибка подписки: ${e.message}"
+                    )
+                }
+            }
+        }.start()
+    }
+
+    private fun changeSubscriptionUrl(
+        group: SubscriptionGroup,
+        newUrl: String,
+        newTitle: String
+    ) {
+        try {
+            SubscriptionStore.changeUrl(
+                this,
+                group.id,
+                newUrl
             )
 
+            val newId = SubscriptionStore.idFor(newUrl)
+
+            if (newTitle.isNotBlank()) {
+                SubscriptionStore.rename(
+                    this,
+                    newId,
+                    newTitle
+                )
+            }
+
+            refreshProfiles()
+            updateSubscription(newUrl, newTitle)
+        } catch (e: Exception) {
+            showMessage("Не удалось изменить подписку: ${e.message}")
+        }
+    }
+
+    private fun refreshSubscription(group: SubscriptionGroup) {
+        showMessage("Обновляю ${group.title}…")
+        updateSubscription(group.url, group.title)
+    }
+
+    // ---------------------------------------------------------
+    // Subscription groups and profiles
+    // ---------------------------------------------------------
+
+    private fun refreshProfiles() {
+        if (!::serverContainer.isInitialized) return
+
+        serverContainer.removeAllViews()
+
+        val profiles = ProfileStore.getAll(this)
+        val groups = SubscriptionStore.all(this)
+
+        if (
+            selectedId == null ||
+            profiles.none { it.id == selectedId }
+        ) {
+            val saved = getSharedPreferences(
+                "ws_settings",
+                MODE_PRIVATE
+            ).getString("active_profile", null)
+
+            selectedId = profiles.firstOrNull {
+                it.id == saved
+            }?.id ?: profiles.firstOrNull()?.id
+        }
+
+        if (profiles.isEmpty()) {
+            serverContainer.addView(
+                makeCard().apply {
+                    addView(
+                        text(
+                            "Пока нет серверов",
+                            16f,
+                            palette.foreground,
+                            true
+                        ).apply {
+                            gravity = Gravity.CENTER
+                        }
+                    )
+
+                    addView(
+                        text(
+                            "Нажмите +, чтобы добавить сервер или подписку",
+                            12f,
+                            palette.muted
+                        ).apply {
+                            gravity = Gravity.CENTER
+                            setPadding(0, dp(8), 0, 0)
+                        }
+                    )
+                }
+            )
+            return
+        }
+
+        val groupedIds = groups
+            .flatMap { it.profileIds }
+            .toSet()
+
+        val sortedGroups = groups.sortedByDescending {
+            SubscriptionStore.isPinned(this, it.id)
+        }
+
+        sortedGroups.forEach { group ->
+            val members = profiles.filter {
+                it.id in group.profileIds
+            }
+
+            if (members.isNotEmpty()) {
+                addSubscriptionGroup(group, members)
+            }
+        }
+
+        profiles.filterNot {
+            it.id in groupedIds
+        }.forEach {
+            addProfileCard(it, serverContainer)
+        }
+    }
+
+    private fun addSubscriptionGroup(
+        group: SubscriptionGroup,
+        members: List<ServerProfile>
+    ) {
+        val prefs = getSharedPreferences(
+            "ws_settings",
+            MODE_PRIVATE
+        )
+
+        val collapsed = prefs.getBoolean(
+            "subscription_collapsed_${group.id}",
+            false
+        )
+
+        val pinned = SubscriptionStore.isPinned(
+            this,
+            group.id
+        )
+
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(13), dp(14), dp(12))
             background = rounded(
-                withAlpha(
-                    Customization.palette(this@MainActivity).surface,
-                    Customization.cardAlpha(this@MainActivity)
-                ),
-                dp(20)
+                palette.surface,
+                19
             )
+        }
 
-            elevation = dp(2).toFloat()
+        val heading = row()
 
+        val titleBlock = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
+                0,
+                -2,
+                1f
             )
         }
-    }
 
-    private fun sectionHeader(
-        text: String,
-        pastel: Boolean
-    ): TextView {
-        return TextView(this).apply {
-            this.text = text
-            textSize = 11f
-            letterSpacing = 1.4f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(mutedColor(pastel))
-            setPadding(0, 0, 0, dp(12))
-        }
-    }
-
-    private fun actionButton(
-        label: String,
-        pastel: Boolean,
-        action: () -> Unit
-    ): TextView {
-        return TextView(this).apply {
-            text = label
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-
-            setTextColor(
-                Customization.palette(this@MainActivity).foreground
+        titleBlock.addView(
+            text(
+                (if (collapsed) "▸ " else "▾ ") + group.title,
+                14f,
+                palette.foreground,
+                true
             )
+        )
+
+        titleBlock.addView(
+            text(
+                "${members.size} серверов" +
+                    if (pinned) "  ·  Закреплено" else "",
+                10f,
+                palette.muted
+            ).apply {
+                setPadding(0, dp(4), 0, 0)
+            }
+        )
+
+        titleBlock.setOnClickListener {
+            prefs.edit()
+                .putBoolean(
+                    "subscription_collapsed_${group.id}",
+                    !collapsed
+                )
+                .apply()
+
+            refreshProfiles()
+        }
+
+        heading.addView(titleBlock)
+
+        heading.addView(
+            groupAction("◷") {
+                pingSubscription(group, members)
+            }
+        )
+
+        heading.addView(
+            groupAction("↻") {
+                refreshSubscription(group)
+            }
+        )
+
+        heading.addView(
+            groupAction("⋮") {
+                showGroupMenu(group)
+            }
+        )
+
+        panel.addView(heading)
+
+        if (!collapsed) {
+            addSpaceTo(panel, 10)
+
+            members.forEach { profile ->
+                addProfileCard(profile, panel)
+            }
+        }
+
+        serverContainer.addView(
+            panel,
+            LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(10)
+            }
+        )
+    }
+
+    private fun showGroupMenu(group: SubscriptionGroup) {
+        val pinned = SubscriptionStore.isPinned(
+            this,
+            group.id
+        )
+
+        val options = arrayOf(
+            "Изменить URL",
+            "Изменить название",
+            if (pinned) "Открепить сверху" else "Закрепить сверху",
+            "Настройки эмуляции клиента",
+            "Удалить группу"
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle(group.title)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showSubscriptionDialog(group)
+
+                    1 -> renameSubscription(group)
+
+                    2 -> {
+                        SubscriptionStore.setPinned(
+                            this,
+                            group.id,
+                            !pinned
+                        )
+                        refreshProfiles()
+                    }
+
+                    3 -> startActivity(
+                        Intent(
+                            this,
+                            NetworkToolsActivity::class.java
+                        )
+                    )
+
+                    4 -> confirmRemoveGroup(group)
+                }
+            }
+            .show()
+    }
+
+    private fun renameSubscription(group: SubscriptionGroup) {
+        val input = EditText(this).apply {
+            setText(group.title)
+            hint = "Название подписки"
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Название подписки")
+            .setView(input)
+            .setPositiveButton("Сохранить") { _, _ ->
+                SubscriptionStore.rename(
+                    this,
+                    group.id,
+                    input.text.toString()
+                )
+                refreshProfiles()
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun confirmRemoveGroup(group: SubscriptionGroup) {
+        AlertDialog.Builder(this)
+            .setTitle("Удалить подписку?")
+            .setMessage(
+                "Группа «${group.title}» будет удалена. " +
+                    "Импортированные серверы останутся в списке."
+            )
+            .setPositiveButton("Удалить") { _, _ ->
+                SubscriptionStore.remove(this, group.id)
+                refreshProfiles()
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun addProfileCard(
+        profile: ServerProfile,
+        parent: LinearLayout
+    ) {
+        val selected = profile.id == selectedId
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(13), dp(12), dp(13), dp(12))
 
             background = rounded(
-                withAlpha(
-                    Customization.palette(this@MainActivity).surface,
-                    Customization.cardAlpha(this@MainActivity)
-                ),
-                dp(15)
-            )
-
-            setPadding(
-                dp(14),
-                dp(17),
-                dp(14),
-                dp(17)
+                if (selected) {
+                    withAlpha(accent, 22)
+                } else {
+                    withAlpha(
+                        palette.background,
+                        55
+                    )
+                },
+                14
             )
 
             isClickable = true
             isFocusable = true
 
             setOnClickListener {
-                action()
-            }
-        }
-    }
-
-    private fun updateConnectionUi(message: String? = null) {
-        if (!::statusText.isInitialized) return
-
-        val pastel = Customization.isPastel(this)
-
-        when (connectionState) {
-            VPNService.STATE_CONNECTING -> {
-                statusText.text = "Подключение..."
-                statusDescription.text =
-                    message ?: "Подготавливаем VPN-туннель"
-
-                connectButton.text = "ОТМЕНИТЬ"
+                selectProfile(profile.id)
             }
 
-            VPNService.STATE_CONNECTED -> {
-                statusText.text = "Подключено"
-                statusDescription.text =
-                    message ?: "Защищённое соединение активно"
-
-                connectButton.text = "ОТКЛЮЧИТЬСЯ"
-            }
-
-            VPNService.STATE_ERROR -> {
-                statusText.text = "Ошибка"
-                statusDescription.text =
-                    message ?: "Не удалось запустить VPN"
-
-                connectButton.text = "ПОПРОБОВАТЬ СНОВА"
-            }
-
-            else -> {
-                statusText.text = "Отключено"
-                statusDescription.text =
-                    message ?: "Выберите сервер и подключитесь"
-
-                connectButton.text = "ПОДКЛЮЧИТЬСЯ"
+            setOnLongClickListener {
+                confirmDeleteProfile(profile)
+                true
             }
         }
 
-        statusText.setTextColor(
-            when (connectionState) {
-                VPNService.STATE_CONNECTED ->
-                    Color.rgb(64, 190, 132)
+        val top = row()
 
-                VPNService.STATE_ERROR ->
-                    Color.rgb(235, 91, 91)
-
-                else -> {
-                    if (pastel) {
-                        Color.rgb(55, 39, 67)
-                    } else {
-                        Color.rgb(242, 245, 250)
-                    }
-                }
-            }
+        val name = text(
+            profile.name,
+            13f,
+            palette.foreground,
+            true
         )
 
-        if (connectionState == VPNService.STATE_ERROR) {
-            Toast.makeText(
-                this,
-                message ?: "Ошибка подключения",
-                Toast.LENGTH_LONG
-            ).show()
-        }
+        name.layoutParams = LinearLayout.LayoutParams(
+            0,
+            -2,
+            1f
+        )
 
-        refreshTraffic()
-    }
+        top.addView(name)
 
-    private fun refreshTraffic() {
-        if (!::trafficText.isInitialized) return
-
-        val snapshot = TrafficMonitor.read()
-
-        trafficText.text = String.format(
-            Locale.getDefault(),
-            "↑ %s  (%s/s)     ↓ %s  (%s/s)\nВремя: %s",
-            TrafficMonitor.format(snapshot.uploaded),
-            TrafficMonitor.format(snapshot.uploadBytesPerSecond),
-            TrafficMonitor.format(snapshot.downloaded),
-            TrafficMonitor.format(snapshot.downloadBytesPerSecond),
-            if (XrayManager.startedAtElapsedRealtime > 0L) {
-                TrafficMonitor.formatDuration(
-                    android.os.SystemClock.elapsedRealtime() -
-                        XrayManager.startedAtElapsedRealtime
+        if (selected) {
+            top.addView(
+                text(
+                    "●",
+                    10f,
+                    Color.rgb(64, 190, 132),
+                    true
                 )
-            } else {
-                "—"
+            )
+        }
+
+        card.addView(top)
+
+        card.addView(
+            text(
+                "${profile.protocol}  ·  ${profile.address}:${profile.port}",
+                10f,
+                palette.muted
+            ).apply {
+                setPadding(0, dp(6), 0, 0)
+            }
+        )
+
+        parent.addView(
+            card,
+            LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(7)
             }
         )
     }
+
+    private fun groupAction(
+        label: String,
+        action: () -> Unit
+    ): TextView {
+        return text(
+            label,
+            19f,
+            palette.foreground,
+            true
+        ).apply {
+            gravity = Gravity.CENTER
+            background = rounded(
+                withAlpha(accent, 25),
+                11
+            )
+            layoutParams = LinearLayout.LayoutParams(
+                dp(37),
+                dp(37)
+            ).apply {
+                leftMargin = dp(5)
+            }
+            setOnClickListener { action() }
+        }
+    }
+
+    private fun pingSubscription(
+        group: SubscriptionGroup,
+        members: List<ServerProfile>
+    ) {
+        showMessage("Проверяю ${members.size} серверов…")
+
+        Thread {
+            val results = members.map { profile ->
+                profile.name to runCatching {
+                    ServerLatency.check(profile)
+                }.getOrNull()
+            }
+
+            runOnUiThread {
+                val message = results.joinToString("\n") {
+                    (name, ms) ->
+                    "$name — ${ms?.let { "$it мс" } ?: "ошибка"}"
+                }
+
+                AlertDialog.Builder(this)
+                    .setTitle("Пинг · ${group.title}")
+                    .setMessage(message.ifBlank { "Нет серверов" })
+                    .setPositiveButton("Закрыть", null)
+                    .show()
+            }
+        }.start()
+    }
+
+    private fun selectProfile(id: String) {
+        selectedId = id
+
+        getSharedPreferences(
+            "ws_settings",
+            MODE_PRIVATE
+        ).edit()
+            .putString("active_profile", id)
+            .apply()
+
+        refreshProfiles()
+    }
+
+    private fun confirmDeleteProfile(profile: ServerProfile) {
+        AlertDialog.Builder(this)
+            .setTitle("Удалить сервер?")
+            .setMessage("Профиль «${profile.name}» будет удалён.")
+            .setPositiveButton("Удалить") { _, _ ->
+                ProfileStore.remove(this, profile.id)
+
+                if (selectedId == profile.id) {
+                    selectedId = null
+
+                    getSharedPreferences(
+                        "ws_settings",
+                        MODE_PRIVATE
+                    ).edit()
+                        .remove("active_profile")
+                        .apply()
+                }
+
+                refreshProfiles()
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    // ---------------------------------------------------------
+    // VPN
+    // ---------------------------------------------------------
 
     private fun connectVPN() {
         val profiles = ProfileStore.getAll(this)
 
         if (profiles.isEmpty()) {
-            showMessage("Сначала импортируй сервер")
+            showMessage("Сначала добавьте сервер")
             return
         }
 
@@ -681,7 +1189,6 @@ class MainActivity : Activity() {
             }
         } catch (e: Exception) {
             connectionState = VPNService.STATE_ERROR
-
             updateConnectionUi(
                 "Не удалось запустить службу: ${e.message}"
             )
@@ -712,11 +1219,7 @@ class MainActivity : Activity() {
         resultCode: Int,
         data: Intent?
     ) {
-        super.onActivityResult(
-            requestCode,
-            resultCode,
-            data
-        )
+        super.onActivityResult(requestCode, resultCode, data)
 
         if (requestCode == REQUEST_VPN) {
             if (resultCode == RESULT_OK) {
@@ -728,918 +1231,172 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showAddMenu(anchor: View) {
-        val menu = PopupMenu(this, anchor)
+    private fun updateConnectionUi(message: String? = null) {
+        if (!::statusText.isInitialized) return
 
-        menu.menu.add(
-            0,
-            1,
-            0,
-            "Вставить из буфера обмена"
-        )
-
-        menu.menu.add(
-            0,
-            2,
-            1,
-            "Добавить вручную"
-        )
-
-        menu.menu.add(
-            0,
-            3,
-            2,
-            "Добавить подписку"
-        )
-
-        menu.menu.add(
-            0,
-            4,
-            3,
-            "Пинг и инструменты"
-        )
-
-        menu.menu.add(
-            0,
-            5,
-            4,
-            "Раздельное туннелирование"
-        )
-
-        menu.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                1 -> pasteFromClipboard()
-                2 -> showManualImportDialog()
-                3 -> showSubscriptionDialog()
-
-                4 -> startActivity(
-                    Intent(
-                        this,
-                        NetworkToolsActivity::class.java
-                    )
-                )
-
-                5 -> startActivity(
-                    Intent(
-                        this,
-                        SplitTunnelingActivity::class.java
-                    )
-                )
+        when (connectionState) {
+            VPNService.STATE_CONNECTING -> {
+                statusText.text = "Подключение…"
+                statusDescription.text =
+                    message ?: "Подготавливаем VPN-туннель"
+                connectButton.text = "ОТМЕНИТЬ"
             }
 
-            true
-        }
-
-        menu.show()
-    }
-
-    private fun pasteFromClipboard() {
-        val clipboard =
-            getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-
-        val value = clipboard.primaryClip
-            ?.takeIf { it.itemCount > 0 }
-            ?.getItemAt(0)
-            ?.coerceToText(this)
-            ?.toString()
-            ?.trim()
-
-        if (value.isNullOrBlank()) {
-            showMessage("Буфер обмена пуст")
-            return
-        }
-
-        importProfileValue(value)
-    }
-
-    private fun showManualImportDialog() {
-        val input = EditText(this).apply {
-            hint = "VLESS / VMess / Trojan / SS или JSON outbound"
-
-            inputType =
-                InputType.TYPE_CLASS_TEXT or
-                    InputType.TYPE_TEXT_FLAG_MULTI_LINE
-
-            minLines = 5
-
-            setPadding(
-                dp(12),
-                dp(10),
-                dp(12),
-                dp(10)
-            )
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("Добавить вручную")
-            .setMessage(
-                "Вставь ссылку профиля или JSON-конфигурацию с proxy outbound."
-            )
-            .setView(input)
-            .setPositiveButton("Добавить") { _, _ ->
-                importProfileValue(input.text.toString())
+            VPNService.STATE_CONNECTED -> {
+                statusText.text = "Подключено"
+                statusDescription.text =
+                    message ?: "Защищённое соединение активно"
+                connectButton.text = "ОТКЛЮЧИТЬСЯ"
             }
-            .setNegativeButton("Отмена", null)
-            .show()
+
+            VPNService.STATE_ERROR -> {
+                statusText.text = "Ошибка"
+                statusDescription.text =
+                    message ?: "Не удалось запустить VPN"
+                connectButton.text = "ПОПРОБОВАТЬ СНОВА"
+            }
+
+            else -> {
+                statusText.text = "Отключено"
+                statusDescription.text =
+                    message ?: "Выберите сервер и подключитесь"
+                connectButton.text = "ПОДКЛЮЧИТЬСЯ"
+            }
+        }
+
+        statusText.setTextColor(
+            when (connectionState) {
+                VPNService.STATE_CONNECTED ->
+                    Color.rgb(64, 190, 132)
+
+                VPNService.STATE_ERROR ->
+                    Color.rgb(235, 91, 91)
+
+                else -> palette.foreground
+            }
+        )
+
+        refreshTraffic()
     }
 
-    private fun showSubscriptionDialog() {
-        val url = EditText(this).apply {
-            hint = "https://example.com/subscription"
+    private fun refreshTraffic() {
+        if (!::trafficText.isInitialized) return
 
-            inputType =
-                InputType.TYPE_CLASS_TEXT or
-                    InputType.TYPE_TEXT_VARIATION_URI
+        val snapshot = TrafficMonitor.read()
 
-            setPadding(
-                dp(12),
-                dp(10),
-                dp(12),
-                dp(10)
-            )
-        }
+        trafficText.text = String.format(
+            Locale.getDefault(),
+            "↑ %s  (%s/s)     ↓ %s  (%s/s)\nВремя: %s",
+            TrafficMonitor.format(snapshot.uploaded),
+            TrafficMonitor.format(snapshot.uploadBytesPerSecond),
+            TrafficMonitor.format(snapshot.downloaded),
+            TrafficMonitor.format(snapshot.downloadBytesPerSecond),
+            if (XrayManager.startedAtElapsedRealtime > 0L) {
+                TrafficMonitor.formatDuration(
+                    android.os.SystemClock.elapsedRealtime() -
+                        XrayManager.startedAtElapsedRealtime
+                )
+            } else {
+                "—"
+            }
+        )
+    }
 
-        val title = EditText(this).apply {
-            hint = "Название подписки (необязательно)"
+    // ---------------------------------------------------------
+    // UI helpers
+    // ---------------------------------------------------------
 
-            setPadding(
-                dp(12),
-                dp(10),
-                dp(12),
-                dp(10)
-            )
-        }
-
-        val box = LinearLayout(this).apply {
+    private fun makeCard(): LinearLayout {
+        return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(url)
-            addView(title)
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("Добавить подписку")
-            .setMessage("Укажи ссылку и, если нужно, своё название.")
-            .setView(box)
-            .setPositiveButton("Добавить") { _, _ ->
-                val link = url.text.toString().trim()
-
-                if (link.isBlank()) {
-                    showMessage("Укажи ссылку подписки")
-                } else {
-                    updateSubscription(
-                        link,
-                        title.text.toString().trim().ifBlank { null }
-                    )
-                }
-            }
-            .setNegativeButton("Отмена", null)
-            .setNeutralButton("Имитация клиента") { _, _ ->
-                startActivity(
-                    Intent(
-                        this,
-                        NetworkToolsActivity::class.java
-                    )
-                )
-            }
-            .show()
-    }
-
-    private fun importProfileValue(value: String) {
-        try {
-            val profile = ProfileCodec.parse(value)
-            val storedProfile = ProfileStore.add(this, profile)
-
-            selectedId = storedProfile.id
-
-            getSharedPreferences(
-                "ws_settings",
-                MODE_PRIVATE
-            ).edit()
-                .putString("active_profile", storedProfile.id)
-                .apply()
-
-            refreshProfiles()
-            showMessage("Сервер добавлен")
-        } catch (e: Exception) {
-            showMessage("Ошибка импорта: ${e.message}")
-        }
-    }
-
-    private fun importProfile() {
-        showManualImportDialog()
-    }
-
-    private fun addSubscription() {
-        showSubscriptionDialog()
-    }
-
-    /**
-     * SubscriptionManager.updateDetailed() itself:
-     * 1. Downloads and parses the subscription.
-     * 2. Saves imported profiles.
-     * 3. Updates SubscriptionStore with the stored profile IDs.
-     *
-     * Do not call SubscriptionStore.upsert() here with result.profiles:
-     * those are parsed profiles, while the manager has already mapped
-     * them to the stored profiles used by the subscription group.
-     */
-    private fun updateSubscription(
-        url: String,
-        customTitle: String? = null
-    ) {
-        Toast.makeText(
-            this,
-            "Загружаю подписку...",
-            Toast.LENGTH_SHORT
-        ).show()
-
-        Thread {
-            try {
-                val result = kotlinx.coroutines.runBlocking {
-                    SubscriptionManager.updateDetailed(
-                        this@MainActivity,
-                        url
-                    )
-                }
-
-                if (!customTitle.isNullOrBlank()) {
-                    SubscriptionStore.rename(
-                        this@MainActivity,
-                        SubscriptionStore.idFor(url),
-                        customTitle
-                    )
-                }
-
-                runOnUiThread {
-                    refreshProfiles()
-
-                    showMessage(
-                        "Обновлено серверов: ${result.imported}"
-                    )
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    showMessage(
-                        "Ошибка подписки: ${e.message}"
-                    )
-                }
-            }
-        }.start()
-    }
-
-    private fun refreshProfiles() {
-        if (!::serverContainer.isInitialized) return
-
-        serverContainer.removeAllViews()
-
-        val pastel = Customization.isPastel(this)
-        val profiles = ProfileStore.getAll(this)
-
-        if (profiles.isEmpty()) {
-            serverContainer.addView(
-                TextView(this).apply {
-                    text =
-                        "Пока нет серверов\nИмпортируй ссылку или добавь подписку"
-
-                    textSize = 13f
-                    gravity = Gravity.CENTER
-
-                    setTextColor(mutedColor(pastel))
-
-                    setPadding(
-                        dp(12),
-                        dp(24),
-                        dp(12),
-                        dp(24)
-                    )
-
-                    background = rounded(
-                        Customization.palette(this@MainActivity).surface,
-                        dp(16)
-                    )
-                }
-            )
-
-            return
-        }
-
-        if (
-            selectedId == null ||
-            profiles.none { it.id == selectedId }
-        ) {
-            val savedId = getSharedPreferences(
-                "ws_settings",
-                MODE_PRIVATE
-            ).getString("active_profile", null)
-
-            selectedId =
-                profiles.firstOrNull { it.id == savedId }?.id
-                    ?: profiles.first().id
-        }
-
-        val groups = SubscriptionStore.all(this)
-            .sortedByDescending {
-                SubscriptionStore.isPinned(this, it.id)
-            }
-
-        val groupedIds = groups
-            .flatMap { it.profileIds }
-            .toSet()
-
-        groups.forEach { group ->
-            val members = profiles.filter {
-                it.id in group.profileIds
-            }
-
-            if (members.isNotEmpty()) {
-                addSubscriptionGroup(
-                    group,
-                    members,
-                    pastel
-                )
-            }
-        }
-
-        profiles
-            .filterNot { it.id in groupedIds }
-            .forEach {
-                addProfileCard(it, pastel)
-            }
-    }
-
-    private fun addSubscriptionGroup(
-        group: SubscriptionGroup,
-        members: List<ServerProfile>,
-        pastel: Boolean
-    ) {
-        val prefs = getSharedPreferences(
-            "ws_settings",
-            MODE_PRIVATE
-        )
-
-        val collapsed = prefs.getBoolean(
-            "subscription_collapsed_${group.id}",
-            false
-        )
-
-        val palette = Customization.palette(this)
-
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-
-            setPadding(
-                dp(14),
-                dp(13),
-                dp(14),
-                dp(10)
-            )
-
+            setPadding(dp(17), dp(17), dp(17), dp(17))
             background = rounded(
                 withAlpha(
                     palette.surface,
                     Customization.cardAlpha(this@MainActivity)
                 ),
-                dp(18)
+                19
+            )
+            elevation = dp(2).toFloat()
+
+            layoutParams = LinearLayout.LayoutParams(
+                -1,
+                -2
             )
         }
+    }
 
-        val headingRow = LinearLayout(this).apply {
+    private fun row(content: (LinearLayout.() -> Unit)? = null): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            content?.invoke(this)
+        }
+    }
+
+    private fun row(): LinearLayout {
+        return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-
-        val heading = TextView(this).apply {
-            text =
-                "${if (collapsed) "▸" else "▾"}  ${group.title}  ·  ${members.size}"
-
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(palette.foreground)
-
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                dp(42),
-                1f
-            )
-
-            setOnClickListener {
-                prefs.edit()
-                    .putBoolean(
-                        "subscription_collapsed_${group.id}",
-                        !collapsed
-                    )
-                    .apply()
-
-                refreshProfiles()
-            }
-        }
-
-        headingRow.addView(heading)
-
-        headingRow.addView(
-            iconAction(
-                "◉",
-                "Проверить пинг"
-            ) {
-                pingSubscription(group, members)
-            }
-        )
-
-        headingRow.addView(
-            iconAction(
-                "⟳",
-                "Обновить подписку"
-            ) {
-                refreshSubscription(group)
-            }
-        )
-
-        headingRow.addView(
-            iconAction(
-                "⋮",
-                "Настройки подписки"
-            ) {
-                showSubscriptionOptions(group)
-            }
-        )
-
-        panel.addView(headingRow)
-
-        if (!collapsed) {
-            members.forEach {
-                addProfileCard(it, pastel, panel)
-            }
-        }
-
-        serverContainer.addView(
-            panel,
-            LinearLayout.LayoutParams(-1, -2).apply {
-                bottomMargin = dp(10)
-            }
-        )
     }
 
-    private fun iconAction(
-        symbol: String,
-        description: String,
-        action: () -> Unit
-    ): TextView {
-        return TextView(this).apply {
-            text = symbol
-            textSize = if (symbol == "⋮") 24f else 20f
-            gravity = Gravity.CENTER
-            contentDescription = description
-
-            setTextColor(
-                Customization.palette(this@MainActivity).foreground
-            )
-
-            layoutParams = LinearLayout.LayoutParams(
-                dp(38),
-                dp(40)
-            )
-
-            isClickable = true
-            isFocusable = true
-
-            setOnClickListener {
-                action()
-            }
-        }
-    }
-
-    private fun showSubscriptionOptions(group: SubscriptionGroup) {
-        val menu = PopupMenu(this, serverContainer)
-
-        menu.menu.add("Изменить название")
-        menu.menu.add("Изменить ссылку")
-
-        menu.menu.add(
-            if (SubscriptionStore.isPinned(this, group.id)) {
-                "Открепить сверху"
-            } else {
-                "Закрепить сверху"
-            }
-        )
-
-        menu.menu.add("Имитация клиента")
-        menu.menu.add("Удалить подписку")
-
-        menu.setOnMenuItemClickListener { item ->
-            when (item.title.toString()) {
-                "Изменить название" -> {
-                    editSubscriptionTitle(group)
-                }
-
-                "Изменить ссылку" -> {
-                    editSubscriptionUrl(group)
-                }
-
-                "Закрепить сверху",
-                "Открепить сверху" -> {
-                    SubscriptionStore.setPinned(
-                        this,
-                        group.id,
-                        !SubscriptionStore.isPinned(this, group.id)
-                    )
-
-                    refreshProfiles()
-                }
-
-                "Имитация клиента" -> {
-                    startActivity(
-                        Intent(
-                            this,
-                            NetworkToolsActivity::class.java
-                        )
-                    )
-                }
-
-                "Удалить подписку" -> {
-                    AlertDialog.Builder(this)
-                        .setTitle("Удалить подписку?")
-                        .setMessage(
-                            "Серверы, импортированные из неё, останутся в списке."
-                        )
-                        .setPositiveButton("Удалить") { _, _ ->
-                            SubscriptionStore.remove(
-                                this,
-                                group.id
-                            )
-
-                            refreshProfiles()
-                        }
-                        .setNegativeButton("Отмена", null)
-                        .show()
-                }
-            }
-
-            true
-        }
-
-        menu.show()
-    }
-
-    private fun editSubscriptionTitle(group: SubscriptionGroup) {
-        val input = EditText(this).apply {
-            setText(group.title)
-            hint = "Название группы"
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("Название подписки")
-            .setView(input)
-            .setPositiveButton("Сохранить") { _, _ ->
-                SubscriptionStore.rename(
-                    this,
-                    group.id,
-                    input.text.toString()
-                )
-
-                refreshProfiles()
-            }
-            .setNegativeButton("Отмена", null)
-            .show()
-    }
-
-    private fun editSubscriptionUrl(group: SubscriptionGroup) {
-        val input = EditText(this).apply {
-            setText(group.url)
-
-            inputType =
-                InputType.TYPE_CLASS_TEXT or
-                    InputType.TYPE_TEXT_VARIATION_URI
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("Ссылка подписки")
-            .setView(input)
-            .setMessage(
-                "После сохранения подписка будет обновлена по новой ссылке."
-            )
-            .setPositiveButton("Сохранить и обновить") { _, _ ->
-                val newUrl = input.text.toString().trim()
-
-                if (newUrl.isBlank()) {
-                    showMessage("Ссылка не может быть пустой")
-                } else {
-                    SubscriptionStore.changeUrl(
-                        this,
-                        group.id,
-                        newUrl
-                    )
-
-                    refreshProfiles()
-                    updateSubscription(newUrl, group.title)
-                }
-            }
-            .setNegativeButton("Отмена", null)
-            .show()
-    }
-
-    private fun addProfileCard(
-        profile: ServerProfile,
-        pastel: Boolean,
-        parent: LinearLayout = serverContainer
-    ) {
-        val selected = profile.id == selectedId
-
-        val item = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-
-            setPadding(
-                dp(14),
-                dp(12),
-                dp(14),
-                dp(12)
-            )
-
-            background = rounded(
-                if (selected) {
-                    withAlpha(
-                        Customization.accent(this@MainActivity),
-                        30
-                    )
-                } else {
-                    withAlpha(
-                        Customization.palette(this@MainActivity).surface,
-                        Customization.cardAlpha(this@MainActivity)
-                    )
-                },
-                dp(14)
-            )
-
-            isClickable = true
-            isFocusable = true
-
-            setOnClickListener {
-                selectProfile(profile.id)
-            }
-
-            setOnLongClickListener {
-                confirmDeleteProfile(profile)
-                true
-            }
-        }
-
-        item.addView(
-            TextView(this).apply {
-                text = profile.name
-                textSize = 14f
-                typeface = Typeface.DEFAULT_BOLD
-
-                setTextColor(
-                    Customization.palette(this@MainActivity).foreground
-                )
-            }
-        )
-
-        item.addView(
-            TextView(this).apply {
-                text =
-                    "${profile.protocol}  •  ${profile.address}:${profile.port}"
-
-                textSize = 11f
-                setTextColor(mutedColor(pastel))
-                setPadding(0, dp(5), 0, 0)
-            }
-        )
-
-        item.addView(
-            TextView(this).apply {
-                text =
-                    if (selected) {
-                        "ВЫБРАН"
-                    } else {
-                        "НАЖМИ, ЧТОБЫ ВЫБРАТЬ"
-                    }
-
-                textSize = 9f
-                letterSpacing = 1f
-                typeface = Typeface.DEFAULT_BOLD
-
-                setTextColor(
-                    if (selected) {
-                        Color.rgb(64, 190, 132)
-                    } else {
-                        mutedColor(pastel)
-                    }
-                )
-
-                setPadding(0, dp(8), 0, 0)
-            }
-        )
-
-        parent.addView(
-            item,
-            LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(8)
-            }
-        )
-    }
-
-    private fun smallAction(
-        title: String,
-        action: () -> Unit
-    ): TextView {
-        return TextView(this).apply {
-            text = title
-            textSize = 11f
-            gravity = Gravity.CENTER
-
-            setTextColor(
-                Customization.palette(this@MainActivity).foreground
-            )
-
-            background = rounded(
-                withAlpha(
-                    Customization.accent(this@MainActivity),
-                    38
-                ),
-                dp(10)
-            )
-
-            setOnClickListener {
-                action()
-            }
-        }
-    }
-
-    /**
-     * SubscriptionManager.updateDetailed() already updates SubscriptionStore.
-     * This method only refreshes the UI and displays the imported count.
-     */
-    private fun refreshSubscription(group: SubscriptionGroup) {
-        showMessage("Обновляю ${group.title}…")
-
-        Thread {
-            try {
-                val result = kotlinx.coroutines.runBlocking {
-                    SubscriptionManager.updateDetailed(
-                        this@MainActivity,
-                        group.url
-                    )
-                }
-
-                runOnUiThread {
-                    refreshProfiles()
-
-                    showMessage(
-                        "${group.title}: обновлено ${result.imported} серверов"
-                    )
-                }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    showMessage(
-                        "Ошибка обновления: ${e.message}"
-                    )
-                }
-            }
-        }.start()
-    }
-
-    private fun pingSubscription(
-        group: SubscriptionGroup,
-        members: List<ServerProfile>
-    ) {
-        showMessage("Проверяю ${members.size} серверов…")
-
-        Thread {
-            val results = members.map { profile ->
-                val result = runCatching {
-                    ServerLatency.check(profile)
-                }
-
-                profile.name to result.getOrNull()
-            }
-
-            runOnUiThread {
-                val text = results.joinToString("\n") {
-                    (name, ms) ->
-                    "$name — ${ms?.let { "$it мс" } ?: "ошибка"}"
-                }
-
-                AlertDialog.Builder(this)
-                    .setTitle("Пинг · ${group.title}")
-                    .setMessage(
-                        text.ifBlank {
-                            "Нет серверов для проверки"
-                        }
-                    )
-                    .setPositiveButton("Закрыть", null)
-                    .show()
-            }
-        }.start()
-    }
-
-    private fun editSubscription(group: SubscriptionGroup) {
-        val input = EditText(this).apply {
-            setText(group.title)
-            hint = "Название группы"
-        }
-
-        AlertDialog.Builder(this)
-            .setTitle("Настройки подписки")
-            .setView(input)
-            .setNeutralButton("Удалить группу") { _, _ ->
-                SubscriptionStore.remove(
-                    this,
-                    group.id
-                )
-
-                refreshProfiles()
-            }
-            .setPositiveButton("Сохранить") { _, _ ->
-                SubscriptionStore.rename(
-                    this,
-                    group.id,
-                    input.text.toString()
-                )
-
-                refreshProfiles()
-            }
-            .setNegativeButton("Отмена", null)
-            .show()
-    }
-
-    private fun applyWallpaperBackground(target: View) {
-        Customization.applyWallpaper(
-            this,
-            target
-        )
-    }
-
-    private fun withAlpha(
+    private fun text(
+        value: String,
+        size: Float,
         color: Int,
-        percent: Int
-    ): Int {
-        return Color.argb(
-            (percent.coerceIn(0, 100) * 255) / 100,
-            Color.red(color),
-            Color.green(color),
-            Color.blue(color)
+        bold: Boolean = false
+    ): TextView {
+        return TextView(this).apply {
+            text = value
+            textSize = size
+            setTextColor(color)
+
+            if (bold) {
+                typeface = Typeface.DEFAULT_BOLD
+            }
+        }
+    }
+
+    private fun iconButton(
+        symbol: String,
+        backgroundColor: Int,
+        textColor: Int = palette.foreground,
+        action: () -> Unit
+    ): TextView {
+        return text(
+            symbol,
+            22f,
+            textColor,
+            true
+        ).apply {
+            gravity = Gravity.CENTER
+            background = rounded(backgroundColor, 14)
+            layoutParams = LinearLayout.LayoutParams(
+                dp(46),
+                dp(44)
+            )
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { action() }
+        }
+    }
+
+    private fun addSpace(height: Int) {
+        root.addView(
+            View(this),
+            LinearLayout.LayoutParams(1, dp(height))
         )
     }
 
-    private fun selectProfile(id: String) {
-        selectedId = id
-
-        getSharedPreferences(
-            "ws_settings",
-            MODE_PRIVATE
-        ).edit()
-            .putString("active_profile", id)
-            .apply()
-
-        refreshProfiles()
-    }
-
-    private fun confirmDeleteProfile(
-        profile: ServerProfile
+    private fun addSpaceTo(
+        parent: LinearLayout,
+        height: Int
     ) {
-        AlertDialog.Builder(this)
-            .setTitle("Удалить сервер?")
-            .setMessage(
-                "Профиль «${profile.name}» будет удалён."
-            )
-            .setPositiveButton("Удалить") { _, _ ->
-                ProfileStore.remove(
-                    this,
-                    profile.id
-                )
-
-                if (selectedId == profile.id) {
-                    selectedId = null
-
-                    getSharedPreferences(
-                        "ws_settings",
-                        MODE_PRIVATE
-                    ).edit()
-                        .remove("active_profile")
-                        .apply()
-                }
-
-                refreshProfiles()
-            }
-            .setNegativeButton("Отмена", null)
-            .show()
-    }
-
-    private fun showMessage(message: String) {
-        Toast.makeText(
-            this,
-            message,
-            Toast.LENGTH_LONG
-        ).show()
-    }
-
-    private fun space(heightDp: Int): View {
-        return View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                1,
-                dp(heightDp)
-            )
-        }
+        parent.addView(
+            View(this),
+            LinearLayout.LayoutParams(1, dp(height))
+        )
     }
 
     private fun rounded(
@@ -1648,18 +1405,34 @@ class MainActivity : Activity() {
     ): GradientDrawable {
         return GradientDrawable().apply {
             setColor(color)
-            cornerRadius = radius.toFloat()
+            cornerRadius = dp(radius).toFloat()
         }
     }
 
-    private fun mutedColor(pastel: Boolean): Int {
-        return Customization.palette(this).muted
+    private fun withAlpha(
+        color: Int,
+        percent: Int
+    ): Int {
+        return Color.argb(
+            percent.coerceIn(0, 100) * 255 / 100,
+            Color.red(color),
+            Color.green(color),
+            Color.blue(color)
+        )
     }
 
     private fun dp(value: Int): Int {
         return (
             value * resources.displayMetrics.density
         ).toInt()
+    }
+
+    private fun showMessage(message: String) {
+        Toast.makeText(
+            this,
+            message,
+            Toast.LENGTH_LONG
+        ).show()
     }
 
     companion object {
