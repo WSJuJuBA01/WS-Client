@@ -140,6 +140,7 @@ class SplitTunnelingActivity : Activity() {
         })
 
         setContentView(scroll)
+        Ui.prepareWindow(this, palette); Ui.padWithInsets(root)
     }
 
     private fun loadApps() {
