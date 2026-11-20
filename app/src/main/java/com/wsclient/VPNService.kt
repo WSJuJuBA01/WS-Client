@@ -1,8 +1,10 @@
+
 package com.wsclient
 
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -40,7 +42,7 @@ class VPNService : VpnService() {
         sendState(STATE_CONNECTING)
 
         try {
-            promoteToForeground()
+            promoteToForeground("Подключение к серверу…")
 
             val prefs = getSharedPreferences(
                 "ws_settings",
@@ -50,8 +52,9 @@ class VPNService : VpnService() {
             val profiles = ProfileStore.getAll(this)
             val activeId = prefs.getString("active_profile", null)
 
-            val profile = profiles.firstOrNull { it.id == activeId }
-                ?: profiles.firstOrNull()
+            val profile = profiles.firstOrNull {
+                it.id == activeId
+            } ?: profiles.firstOrNull()
                 ?: error("Нет серверов. Сначала импортируй профиль.")
 
             val builder = Builder()
@@ -78,8 +81,10 @@ class VPNService : VpnService() {
                 )
             }
 
-            // Сам Xray должен ходить мимо туннеля, иначе будет петля
-            if (!allowList) builder.addDisallowedApplication(packageName)
+            // Xray должен ходить напрямую, чтобы не создать VPN-петлю.
+            if (!allowList) {
+                builder.addDisallowedApplication(packageName)
+            }
 
             if (packages.isNotEmpty()) {
                 SplitTunneling.apply(
@@ -105,12 +110,18 @@ class VPNService : VpnService() {
             }
 
             starting = false
+
+            updateForegroundNotification(
+                "Подключено · ${profile.name}"
+            )
+
             sendState(
                 STATE_CONNECTED,
                 "Подключено: ${profile.name}"
             )
 
             Log.i(TAG, "VPN connected: ${profile.name}")
+
         } catch (e: Exception) {
             Log.e(TAG, "VPN start failed", e)
 
@@ -129,8 +140,10 @@ class VPNService : VpnService() {
         }
     }
 
-    private fun promoteToForeground() {
-        val notification = createNotification()
+    private fun promoteToForeground(text: String) {
+        createNotificationChannel()
+
+        val notification = createNotification(text)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
@@ -139,8 +152,103 @@ class VPNService : VpnService() {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
             )
         } else {
-            startForeground(NOTIFICATION_ID, notification)
+            startForeground(
+                NOTIFICATION_ID,
+                notification
+            )
         }
+    }
+
+    private fun updateForegroundNotification(text: String) {
+        createNotificationChannel()
+
+        val manager =
+            getSystemService(Context.NOTIFICATION_SERVICE)
+                as NotificationManager
+
+        manager.notify(
+            NOTIFICATION_ID,
+            createNotification(text)
+        )
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return
+        }
+
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "WS Client VPN",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Состояние VPN-подключения"
+            setShowBadge(false)
+        }
+
+        getSystemService(NotificationManager::class.java)
+            .createNotificationChannel(channel)
+    }
+
+    private fun createNotification(text: String): Notification {
+        val openIntent = Intent(
+            this,
+            MainActivity::class.java
+        ).apply {
+            flags =
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+
+        val openPendingIntent = PendingIntent.getActivity(
+            this,
+            100,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or
+                PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val stopIntent = Intent(
+            this,
+            VPNService::class.java
+        ).apply {
+            action = ACTION_STOP
+        }
+
+        val stopPendingIntent = PendingIntent.getService(
+            this,
+            101,
+            stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or
+                PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val builder = if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+        ) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+
+        return builder
+            .setSmallIcon(R.drawable.ic_ws_notification)
+            .setContentTitle("WS Client")
+            .setContentText(text)
+            .setContentIntent(openPendingIntent)
+            .setCategory(Notification.CATEGORY_SERVICE)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .addAction(
+                Notification.Action.Builder(
+                    android.R.drawable.ic_media_pause,
+                    "Отключить VPN",
+                    stopPendingIntent
+                ).build()
+            )
+            .build()
     }
 
     private fun stopTunnel() {
@@ -176,39 +284,6 @@ class VPNService : VpnService() {
         }
 
         stopSelf()
-    }
-
-    private fun createNotification(): Notification {
-        val channelId = "ws_vpn"
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId,
-                "WS Client VPN",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Состояние VPN-подключения"
-            }
-
-            getSystemService(NotificationManager::class.java)
-                .createNotificationChannel(channel)
-        }
-
-        val builder = if (
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-        ) {
-            Notification.Builder(this, channelId)
-        } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-        }
-
-        return builder
-            .setContentTitle("WS Client")
-            .setContentText("VPN-подключение активно")
-            .setSmallIcon(android.R.drawable.stat_sys_warning)
-            .setOngoing(true)
-            .build()
     }
 
     private fun sendState(
@@ -249,5 +324,6 @@ class VPNService : VpnService() {
         const val STATE_ERROR = "error"
 
         const val NOTIFICATION_ID = 301
+        private const val CHANNEL_ID = "ws_vpn"
     }
 }
