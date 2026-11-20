@@ -2,6 +2,8 @@
 package com.wsclient
 
 import android.app.Activity
+import android.content.Intent
+import android.content.pm.ResolveInfo
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -40,11 +42,21 @@ class SplitTunnelingActivity : Activity() {
     private lateinit var countText: TextView
     private lateinit var adapter: AppsAdapter
 
-    private var allApps: List<AppEntry> = emptyList()
-    private var filteredApps: List<AppEntry> = emptyList()
+    private val allApps = mutableListOf<AppEntry>()
+    private val filteredApps = mutableListOf<AppEntry>()
+
+    private var pendingApps: List<ResolveInfo> = emptyList()
+    private var nextBatch = 0
 
     private var loadGeneration = 0
+    private var searchGeneration = 0
     private var searchTask: Runnable? = null
+    private var currentQuery = ""
+
+    private var loadingFinished = false
+
+    private val batchSize = 20
+    private val batchDelay = 70L
 
     private val palette
         get() = Customization.palette(this)
@@ -65,6 +77,10 @@ class SplitTunnelingActivity : Activity() {
         buildScreen()
         loadApps()
     }
+
+    // ---------------------------------------------------------
+    // UI
+    // ---------------------------------------------------------
 
     private fun buildScreen() {
         val root = LinearLayout(this).apply {
@@ -124,7 +140,8 @@ class SplitTunnelingActivity : Activity() {
         search = EditText(this).apply {
             hint = "Поиск приложения"
             textSize = 14f
-            singleLine = true
+            setSingleLine(true)
+            maxLines = 1
             setTextColor(palette.foreground)
             setHintTextColor(palette.muted)
             background = rounded(palette.surface, 13)
@@ -139,6 +156,7 @@ class SplitTunnelingActivity : Activity() {
         )
 
         countText = TextView(this).apply {
+            text = "Подготовка списка…"
             textSize = 11f
             setTextColor(palette.muted)
             setPadding(dp(2), dp(3), 0, dp(7))
@@ -180,33 +198,7 @@ class SplitTunnelingActivity : Activity() {
             setPadding(0, dp(16), 0, dp(16))
 
             setOnClickListener {
-                if (allowList.isChecked && selected.isEmpty()) {
-                    Toast.makeText(
-                        this@SplitTunnelingActivity,
-                        "Выбери хотя бы одно приложение",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    return@setOnClickListener
-                }
-
-                prefs.edit()
-                    .putStringSet(
-                        "split_packages",
-                        selected.toSet()
-                    )
-                    .putBoolean(
-                        "split_allowlist",
-                        allowList.isChecked
-                    )
-                    .apply()
-
-                Toast.makeText(
-                    this@SplitTunnelingActivity,
-                    "Сохранено. Переподключи VPN.",
-                    Toast.LENGTH_LONG
-                ).show()
-
-                finish()
+                saveSettings()
             }
         }
 
@@ -217,47 +209,64 @@ class SplitTunnelingActivity : Activity() {
             }
         )
 
+        search.addTextChangedListener(
+            object : TextWatcher {
+                override fun beforeTextChanged(
+                    s: CharSequence?,
+                    start: Int,
+                    count: Int,
+                    after: Int
+                ) = Unit
+
+                override fun onTextChanged(
+                    s: CharSequence?,
+                    start: Int,
+                    before: Int,
+                    count: Int
+                ) {
+                    scheduleSearch(s?.toString().orEmpty())
+                }
+
+                override fun afterTextChanged(s: Editable?) = Unit
+            }
+        )
+
         setContentView(root)
 
         Ui.prepareWindow(this, palette)
         Ui.padWithInsets(root)
     }
 
+    // ---------------------------------------------------------
+    // Progressive app loading
+    // ---------------------------------------------------------
+
     private fun loadApps() {
         val generation = ++loadGeneration
 
-        countText.text = "Загрузка приложений…"
+        loadingFinished = false
+        nextBatch = 0
+        allApps.clear()
+        filteredApps.clear()
+        pendingApps = emptyList()
+
+        adapter.notifyDataSetChanged()
+        countText.text = "Поиск приложений…"
 
         worker.execute {
             val result = runCatching {
-                val pm = packageManager
+                val intent = Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                }
 
-                pm.getInstalledApplications(0)
-                    .asSequence()
+                packageManager
+                    .queryIntentActivities(intent, 0)
+                    .distinctBy {
+                        it.activityInfo?.packageName.orEmpty()
+                    }
                     .filter {
-                        it.packageName != packageName
+                        it.activityInfo?.packageName != packageName
                     }
-                    .mapNotNull { app ->
-                        runCatching {
-                            if (
-                                pm.getLaunchIntentForPackage(
-                                    app.packageName
-                                ) == null
-                            ) {
-                                return@mapNotNull null
-                            }
-
-                            AppEntry(
-                                packageName = app.packageName,
-                                label = pm.getApplicationLabel(app)
-                                    .toString()
-                            )
-                        }.getOrNull()
-                    }
-                    .sortedBy {
-                        it.label.lowercase(Locale.ROOT)
-                    }
-                    .toList()
             }
 
             handler.post {
@@ -265,16 +274,18 @@ class SplitTunnelingActivity : Activity() {
                 if (generation != loadGeneration) return@post
 
                 result.onSuccess { apps ->
-                    allApps = apps
-                    filteredApps = apps
-                    adapter.notifyDataSetChanged()
-
-                    updateCount()
+                    pendingApps = apps
+                    countText.text =
+                        "Найдено приложений: ${apps.size}. Загружаю…"
 
                     if (apps.isEmpty()) {
-                        countText.text = "Приложения не найдены"
+                        loadingFinished = true
+                        updateCount()
+                    } else {
+                        loadNextBatch(generation)
                     }
                 }.onFailure {
+                    loadingFinished = true
                     countText.text = "Не удалось загрузить приложения"
 
                     Toast.makeText(
@@ -287,17 +298,108 @@ class SplitTunnelingActivity : Activity() {
         }
     }
 
+    private fun loadNextBatch(generation: Int) {
+        if (isFinishing || isDestroyed) return
+        if (generation != loadGeneration) return
+
+        if (nextBatch >= pendingApps.size) {
+            loadingFinished = true
+            updateCount()
+            return
+        }
+
+        val start = nextBatch
+        val end = minOf(
+            start + batchSize,
+            pendingApps.size
+        )
+
+        val batch = pendingApps.subList(start, end).toList()
+
+        worker.execute {
+            val entries = batch.mapNotNull { info ->
+                runCatching {
+                    val appInfo = info.activityInfo?.applicationInfo
+                        ?: return@mapNotNull null
+
+                    val packageName = appInfo.packageName
+
+                    if (packageName.isBlank()) {
+                        return@mapNotNull null
+                    }
+
+                    val label = packageManager
+                        .getApplicationLabel(appInfo)
+                        .toString()
+                        .ifBlank { packageName }
+
+                    AppEntry(
+                        packageName = packageName,
+                        label = label
+                    )
+                }.getOrNull()
+            }
+
+            handler.post {
+                if (isFinishing || isDestroyed) return@post
+                if (generation != loadGeneration) return@post
+
+                allApps.addAll(entries)
+
+                allApps.sortBy {
+                    it.label.lowercase(Locale.ROOT)
+                }
+
+                nextBatch = end
+
+                applyCurrentFilter()
+
+                countText.text =
+                    "Загружено ${allApps.size} из ${pendingApps.size}"
+
+                if (nextBatch >= pendingApps.size) {
+                    loadingFinished = true
+                    updateCount()
+                } else {
+                    handler.postDelayed(
+                        {
+                            loadNextBatch(generation)
+                        },
+                        batchDelay
+                    )
+                }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------
+    // Search
+    // ---------------------------------------------------------
+
     private fun scheduleSearch(query: String) {
+        currentQuery = query
+        searchGeneration++
+
+        val generation = searchGeneration
+
         searchTask?.let(handler::removeCallbacks)
 
         val task = Runnable {
-            val normalized = query.trim().lowercase(Locale.ROOT)
+            if (isFinishing || isDestroyed) return@Runnable
+
+            val normalized = query
+                .trim()
+                .lowercase(Locale.ROOT)
 
             worker.execute {
+                val snapshot = synchronized(allApps) {
+                    allApps.toList()
+                }
+
                 val result = if (normalized.isEmpty()) {
-                    allApps
+                    snapshot
                 } else {
-                    allApps.filter {
+                    snapshot.filter {
                         it.label.lowercase(Locale.ROOT)
                             .contains(normalized) ||
                             it.packageName.lowercase(Locale.ROOT)
@@ -307,8 +409,11 @@ class SplitTunnelingActivity : Activity() {
 
                 handler.post {
                     if (isFinishing || isDestroyed) return@post
+                    if (generation != searchGeneration) return@post
 
-                    filteredApps = result
+                    filteredApps.clear()
+                    filteredApps.addAll(result)
+
                     adapter.notifyDataSetChanged()
                     updateCount()
                 }
@@ -319,10 +424,43 @@ class SplitTunnelingActivity : Activity() {
         handler.postDelayed(task, 250L)
     }
 
-    private fun updateCount() {
-        countText.text =
-            "${filteredApps.size} приложений · выбрано ${selected.size}"
+    private fun applyCurrentFilter() {
+        val normalized = currentQuery
+            .trim()
+            .lowercase(Locale.ROOT)
+
+        filteredApps.clear()
+
+        if (normalized.isEmpty()) {
+            filteredApps.addAll(allApps)
+        } else {
+            filteredApps.addAll(
+                allApps.filter {
+                    it.label.lowercase(Locale.ROOT)
+                        .contains(normalized) ||
+                        it.packageName.lowercase(Locale.ROOT)
+                            .contains(normalized)
+                }
+            )
+        }
+
+        adapter.notifyDataSetChanged()
     }
+
+    private fun updateCount() {
+        val progress = if (loadingFinished) {
+            "Загрузка завершена"
+        } else {
+            "Загружено ${allApps.size} из ${pendingApps.size}"
+        }
+
+        countText.text =
+            "$progress · выбрано ${selected.size}"
+    }
+
+    // ---------------------------------------------------------
+    // Adapter: ListView reuses visible rows
+    // ---------------------------------------------------------
 
     private inner class AppsAdapter : BaseAdapter() {
 
@@ -351,6 +489,7 @@ class SplitTunnelingActivity : Activity() {
                         dp(3),
                         dp(7)
                     )
+
                     buttonTintList =
                         android.content.res.ColorStateList.valueOf(
                             Customization.accent(
@@ -361,12 +500,13 @@ class SplitTunnelingActivity : Activity() {
 
             val app = getItem(position)
 
-            // Сбрасываем слушатель до обновления состояния:
-            // иначе переиспользованная строка может изменить другой пакет.
             checkbox.setOnCheckedChangeListener(null)
 
-            checkbox.text = "${app.label}\n${app.packageName}"
-            checkbox.isChecked = app.packageName in selected
+            checkbox.text =
+                "${app.label}\n${app.packageName}"
+
+            checkbox.isChecked =
+                app.packageName in selected
 
             checkbox.setOnCheckedChangeListener { _, checked ->
                 if (checked) {
@@ -382,12 +522,58 @@ class SplitTunnelingActivity : Activity() {
         }
     }
 
+    // ---------------------------------------------------------
+    // Save
+    // ---------------------------------------------------------
+
+    private fun saveSettings() {
+        if (allowList.isChecked && selected.isEmpty()) {
+            Toast.makeText(
+                this,
+                "Выбери хотя бы одно приложение",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        prefs.edit()
+            .putStringSet(
+                "split_packages",
+                selected.toSet()
+            )
+            .putBoolean(
+                "split_allowlist",
+                allowList.isChecked
+            )
+            .apply()
+
+        Toast.makeText(
+            this,
+            "Сохранено. Переподключи VPN.",
+            Toast.LENGTH_LONG
+        ).show()
+
+        finish()
+    }
+
+    // ---------------------------------------------------------
+    // Lifecycle
+    // ---------------------------------------------------------
+
     override fun onDestroy() {
         loadGeneration++
+        searchGeneration++
+
         searchTask?.let(handler::removeCallbacks)
+
         worker.shutdownNow()
+
         super.onDestroy()
     }
+
+    // ---------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------
 
     private fun rounded(
         color: Int,
