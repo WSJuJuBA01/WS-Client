@@ -101,6 +101,7 @@ class NetworkToolsActivity : Activity() {
         buildPingSection()
 
         setContentView(scroll)
+        Ui.prepareWindow(this, palette); Ui.padWithInsets(root)
     }
 
     private fun buildEmulationSection() {
