@@ -1,4 +1,3 @@
-
 package com.wsclient
 
 import android.content.Context
@@ -50,48 +49,29 @@ object SubscriptionStore {
     }
 
     @Synchronized
-    fun upsert(
-        context: Context,
-        url: String,
-        profiles: List<ServerProfile>
-    ) {
+    fun upsert(context: Context, url: String, profiles: List<ServerProfile>) {
         val id = idFor(url)
         val existing = all(context).toMutableList()
         val index = existing.indexOfFirst { it.id == id }
         val previous = existing.getOrNull(index)
-
-        // The latest subscription response is authoritative:
-        // removed profiles leave the group.
         val currentIds = profiles.map { it.id }.toSet()
-
         val group = SubscriptionGroup(
             id,
             previous?.title ?: hostTitle(url),
             url,
             currentIds
         )
-
-        if (index >= 0) {
-            existing[index] = group
-        } else {
-            existing += group
-        }
-
+        if (index >= 0) existing[index] = group else existing += group
         save(context, existing)
     }
 
     @Synchronized
     fun rename(context: Context, id: String, title: String) {
         val groups = all(context).map {
-            if (it.id == id) {
-                it.copy(
-                    title = title.trim().ifBlank { hostTitle(it.url) }
-                )
-            } else {
-                it
-            }
+            if (it.id == id) it.copy(
+                title = title.trim().ifBlank { hostTitle(it.url) }
+            ) else it
         }
-
         save(context, groups)
     }
 
@@ -106,9 +86,7 @@ object SubscriptionStore {
 
     fun setPinned(context: Context, id: String, pinned: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean("pinned_$id", pinned)
-            .apply()
+            .edit().putBoolean("pinned_$id", pinned).apply()
     }
 
     /** Changes the URL while keeping the group's imported profile membership. */
@@ -116,69 +94,38 @@ object SubscriptionStore {
     fun changeUrl(context: Context, oldId: String, newUrl: String) {
         val groups = all(context).toMutableList()
         val index = groups.indexOfFirst { it.id == oldId }
-
         if (index < 0) return
-
         val old = groups[index]
         val newId = idFor(newUrl)
-
         require(groups.none { it.id == newId && it.id != oldId }) {
             "Подписка с такой ссылкой уже существует"
         }
-
         val pinned = isPinned(context, oldId)
-
-        groups[index] = old.copy(
-            id = newId,
-            url = newUrl.trim()
-        )
-
+        groups[index] = old.copy(id = newId, url = newUrl.trim())
         save(context, groups)
-
-        val prefs = context.getSharedPreferences(
-            PREFS,
-            Context.MODE_PRIVATE
-        )
-
-        prefs.edit()
-            .remove("pinned_$oldId")
-            .putBoolean("pinned_$newId", pinned)
-            .apply()
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        prefs.edit().remove("pinned_$oldId").putBoolean("pinned_$newId", pinned).apply()
     }
 
-    fun idFor(url: String): String =
-        MessageDigest.getInstance("SHA-256")
-            .digest(url.trim().toByteArray(Charsets.UTF_8))
-            .take(12)
-            .joinToString("") {
-                "%02x".format(it)
-            }
+    fun idFor(url: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(url.trim().toByteArray(Charsets.UTF_8))
+        .take(12).joinToString("") { "%02x".format(it) }
 
     private fun hostTitle(url: String): String = runCatching {
-        URI(url).host?.removePrefix("www.")?.ifBlank { null }
-            ?: "Подписка"
+        URI(url).host?.removePrefix("www.")?.ifBlank { null } ?: "Подписка"
     }.getOrDefault("Подписка")
 
-    private fun save(
-        context: Context,
-        groups: List<SubscriptionGroup>
-    ) {
+    private fun save(context: Context, groups: List<SubscriptionGroup>) {
         val array = JSONArray()
-
-        groups.forEach { group ->
-            array.put(
-                JSONObject().apply {
-                    put("id", group.id)
-                    put("title", group.title)
-                    put("url", group.url)
-                    put("profiles", JSONArray(group.profileIds.toList()))
-                }
-            )
+        groups.forEach { g ->
+            array.put(JSONObject().apply {
+                put("id", g.id)
+                put("title", g.title)
+                put("url", g.url)
+                put("profiles", JSONArray(g.profileIds.toList()))
+            })
         }
-
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY, array.toString())
-            .apply()
+            .edit().putString(KEY, array.toString()).apply()
     }
 }
