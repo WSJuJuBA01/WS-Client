@@ -25,6 +25,12 @@ import kotlin.math.sin
 enum class Glyph { POWER, DOWNLOAD, LAYERS, CHEVRON, GAUGE, REFRESH, MORE, SERVER, GLOBE, HOME, LIST, CHART, GEAR, PLUS }
 
 object Ui {
+    /** Applies [percent] (0..100) opacity to [color]. */
+    fun withAlpha(color: Int, percent: Int): Int {
+        val a = (percent.coerceIn(0, 100) * 255 / 100)
+        return Color.argb(a, Color.red(color), Color.green(color), Color.blue(color))
+    }
+
     fun mix(a: Int, b: Int, t: Float): Int {
         fun ch(x: Int, y: Int) = (x + (y - x) * t).toInt().coerceIn(0, 255)
         return Color.rgb(
