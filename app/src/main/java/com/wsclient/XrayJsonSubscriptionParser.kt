@@ -59,7 +59,6 @@ object XrayJsonSubscriptionParser {
             val outbounds = root.optJSONArray("outbounds")
 
             if (outbounds == null) {
-                // Допускаем JSON, в котором передан непосредственно outbound.
                 parseOutbound(
                     root = root,
                     outbound = root,
@@ -202,6 +201,7 @@ object XrayJsonSubscriptionParser {
                 tag = tag,
                 protocol = protocol,
                 address = address,
+                outboundIndex = outboundIndex,
                 serverIndex = serverIndex
             )
 
@@ -223,19 +223,30 @@ object XrayJsonSubscriptionParser {
         tag: String,
         protocol: String,
         address: String,
+        outboundIndex: Int,
         serverIndex: Int
     ): String {
+        /*
+         * В JSON подписки название страны находится
+         * в root.remarks, например "🇩🇪 Германия".
+         *
+         * Поэтому оно важнее технических тегов
+         * outbound: proxy, proxy-2 и т.д.
+         */
         val base = when {
+            rootName.isNotBlank() -> rootName
             outboundName.isNotBlank() -> outboundName
             tag.isNotBlank() -> tag
-            rootName.isNotBlank() -> rootName
             else -> "$protocol · $address"
         }
 
-        return if (serverIndex > 0) {
-            "$base · ${serverIndex + 1}"
-        } else {
-            base
+        val suffix = when {
+            serverIndex > 0 -> " · ${serverIndex + 1}"
+            rootName.isNotBlank() && outboundIndex > 0 ->
+                " · ${outboundIndex + 1}"
+            else -> ""
         }
+
+        return base + suffix
     }
 }
