@@ -1,7 +1,6 @@
 package com.wsclient
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -9,12 +8,10 @@ import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
-import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 
 class NetworkToolsActivity : Activity() {
 
@@ -23,8 +20,8 @@ class NetworkToolsActivity : Activity() {
     private lateinit var clientSelector: TextView
     private lateinit var deviceSelector: TextView
 
-    private lateinit var hwidToggle: CheckBox
-    private lateinit var deviceToggle: CheckBox
+    private lateinit var hwidToggle: AppCheckBox
+    private lateinit var deviceToggle: AppCheckBox
 
     private lateinit var userAgentField: EditText
     private lateinit var customHwidField: EditText
@@ -120,14 +117,10 @@ class NetworkToolsActivity : Activity() {
         panel.addView(fieldLabel("Профиль приложения"))
         panel.addView(clientSelector)
 
-        hwidToggle = CheckBox(this).apply {
-            text = "Поддержка HWID (отправлять X-HWID)"
-            textSize = 13f
-            setTextColor(primaryTextColor)
-            buttonTintList = android.content.res.ColorStateList.valueOf(
-                accentColor()
-            )
-        }
+        hwidToggle = AppCheckBox(
+            this,
+            "Поддержка HWID (отправлять X-HWID)"
+        )
 
         panel.addView(hwidToggle)
 
@@ -137,14 +130,10 @@ class NetworkToolsActivity : Activity() {
             "Оставь пустым для локального сохранённого ID"
         )
 
-        deviceToggle = CheckBox(this).apply {
-            text = "Подмена устройства в HTTP-заголовках"
-            textSize = 13f
-            setTextColor(primaryTextColor)
-            buttonTintList = android.content.res.ColorStateList.valueOf(
-                accentColor()
-            )
-        }
+        deviceToggle = AppCheckBox(
+            this,
+            "Подмена устройства в HTTP-заголовках"
+        )
 
         panel.addView(space(4))
         panel.addView(deviceToggle)
@@ -447,7 +436,7 @@ class NetworkToolsActivity : Activity() {
             .indexOfFirst { it.id == settings.clientPreset }
             .coerceAtLeast(0)
 
-        AlertDialog.Builder(this)
+        AppDialog.Builder(this)
             .setTitle("Имитация приложения")
             .setSingleChoiceItems(
                 labels,
@@ -464,11 +453,7 @@ class NetworkToolsActivity : Activity() {
                 SubscriptionIdentity.save(this, settings)
                 loadSettingsIntoFields()
 
-                Toast.makeText(
-                    this,
-                    "Профиль применён: ${preset.label}",
-                    Toast.LENGTH_SHORT
-                ).show()
+                AppToast.show(this, "Профиль применён: ${preset.label}")
 
                 dialog.dismiss()
             }
@@ -485,7 +470,7 @@ class NetworkToolsActivity : Activity() {
             .map { it.label }
             .toTypedArray()
 
-        AlertDialog.Builder(this)
+        AppDialog.Builder(this)
             .setTitle("Профиль устройства")
             .setItems(labels) { _, which ->
                 val profile = profiles[which]
@@ -570,11 +555,7 @@ class NetworkToolsActivity : Activity() {
         val newSettings = collectSettings()
 
         if (newSettings.userAgent.isBlank()) {
-            Toast.makeText(
-                this,
-                "User-Agent не должен быть пустым",
-                Toast.LENGTH_LONG
-            ).show()
+            AppToast.show(this, "User-Agent не должен быть пустым", true)
             return
         }
 
@@ -585,11 +566,7 @@ class NetworkToolsActivity : Activity() {
 
         settings = newSettings
 
-        Toast.makeText(
-            this,
-            "Настройки эмуляции сохранены",
-            Toast.LENGTH_SHORT
-        ).show()
+        AppToast.show(this, "Настройки эмуляции сохранены")
     }
 
     private fun savePingUrl() {
@@ -599,11 +576,7 @@ class NetworkToolsActivity : Activity() {
             !url.startsWith("https://", true) &&
             !url.startsWith("http://", true)
         ) {
-            Toast.makeText(
-                this,
-                "Нужен адрес HTTP или HTTPS",
-                Toast.LENGTH_LONG
-            ).show()
+            AppToast.show(this, "Нужен адрес HTTP или HTTPS", true)
             return
         }
 
@@ -612,11 +585,7 @@ class NetworkToolsActivity : Activity() {
             .putString("test_url", url)
             .apply()
 
-        Toast.makeText(
-            this,
-            "URL проверки сохранён",
-            Toast.LENGTH_SHORT
-        ).show()
+        AppToast.show(this, "URL проверки сохранён")
     }
 
     private fun addField(
@@ -719,6 +688,7 @@ class NetworkToolsActivity : Activity() {
             setPadding(dp(12), dp(14), dp(12), dp(14))
             isClickable = true
             isFocusable = true
+            Ui.pressable(this)
             setOnClickListener {
                 action(this)
             }
