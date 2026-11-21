@@ -45,6 +45,9 @@ class NetworkToolsActivity : Activity() {
 
     private var settings = ClientIdentitySettings()
 
+    // Блоки полей, которые показываются только если их отправляет выбранный клиент
+    private val fieldBlocks = HashMap<IdentityField, View>()
+
     private val palette: Customization.Palette
         get() = Customization.palette(this)
 
@@ -163,49 +166,57 @@ class NetworkToolsActivity : Activity() {
         appVersionField = addField(
             panel,
             "X-App-Version",
-            "Например: 3.9.9"
+            "Например: 3.9.9",
+            key = IdentityField.APP_VERSION
         )
 
         clientHeaderField = addField(
             panel,
             "X-Client",
-            "Например: INCY"
+            "Например: INCY",
+            key = IdentityField.CLIENT
         )
 
         acceptField = addField(
             panel,
             "Accept",
-            "*/*"
+            "*/*",
+            key = IdentityField.ACCEPT
         )
 
         acceptLanguageField = addField(
             panel,
             "Accept-Language",
-            "ru-MM"
+            "ru-MM",
+            key = IdentityField.ACCEPT_LANGUAGE
         )
 
         deviceModelField = addField(
             panel,
             "X-Device-Model",
-            "Например: Samsung SM-S918B"
+            "Например: Samsung SM-S918B",
+            key = IdentityField.DEVICE_MODEL
         )
 
         osVersionField = addField(
             panel,
             "X-Ver-Os",
-            "Например: 14"
+            "Например: 14",
+            key = IdentityField.OS_VERSION
         )
 
         deviceOsField = addField(
             panel,
             "X-Device-Os",
-            "Android"
+            "Android",
+            key = IdentityField.DEVICE_OS
         )
 
         deviceLocaleField = addField(
             panel,
             "X-Device-Locale",
-            "ru_MM"
+            "ru_MM",
+            key = IdentityField.DEVICE_LOCALE
         )
 
         extraHeadersField = addField(
@@ -426,23 +437,15 @@ class NetworkToolsActivity : Activity() {
     private fun chooseClientPreset() {
         settings = collectSettings()
 
-        val ids = arrayOf(
-            "none",
-            "happ",
-            "v2raytun",
-            "inocy"
-        )
+        val presets = SubscriptionIdentity.PRESETS
 
-        val labels = arrayOf(
-            "Нет",
-            "Happ",
-            "v2RayTun",
-            "Inocy"
-        )
+        val labels = presets
+            .map { it.label }
+            .toTypedArray()
 
-        val selectedIndex = ids.indexOf(
-            settings.clientPreset
-        ).coerceAtLeast(0)
+        val selectedIndex = presets
+            .indexOfFirst { it.id == settings.clientPreset }
+            .coerceAtLeast(0)
 
         AlertDialog.Builder(this)
             .setTitle("Имитация приложения")
@@ -450,12 +453,23 @@ class NetworkToolsActivity : Activity() {
                 labels,
                 selectedIndex
             ) { dialog, which ->
+                val preset = presets[which]
+
                 settings = SubscriptionIdentity.withClientPreset(
+                    this,
                     settings,
-                    ids[which]
+                    preset.id
                 )
 
+                SubscriptionIdentity.save(this, settings)
                 loadSettingsIntoFields()
+
+                Toast.makeText(
+                    this,
+                    "Профиль применён: ${preset.label}",
+                    Toast.LENGTH_SHORT
+                ).show()
+
                 dialog.dismiss()
             }
             .setNegativeButton("Отмена", null)
@@ -465,37 +479,23 @@ class NetworkToolsActivity : Activity() {
     private fun chooseDeviceProfile() {
         settings = collectSettings()
 
-        val labels = arrayOf(
-            "SM-S918B · Android 14",
-            "SM-S948B · Android 16",
-            "Pixel 3 XL · Android 12"
-        )
+        val profiles = SubscriptionIdentity.DEVICE_PROFILES
+
+        val labels = profiles
+            .map { it.label }
+            .toTypedArray()
 
         AlertDialog.Builder(this)
             .setTitle("Профиль устройства")
             .setItems(labels) { _, which ->
-                settings = when (which) {
-                    0 -> settings.copy(
-                        deviceProfile = labels[0],
-                        deviceModel = "Samsung SM-S918B",
-                        osVersion = "14",
-                        deviceOs = "Android"
-                    )
+                val profile = profiles[which]
 
-                    1 -> settings.copy(
-                        deviceProfile = labels[1],
-                        deviceModel = "Samsung SM-S948B",
-                        osVersion = "16",
-                        deviceOs = "Android"
-                    )
-
-                    else -> settings.copy(
-                        deviceProfile = labels[2],
-                        deviceModel = "Google Pixel 3 XL",
-                        osVersion = "Android 12",
-                        deviceOs = "Android"
-                    )
-                }
+                settings = settings.copy(
+                    deviceProfile = profile.label,
+                    deviceModel = profile.model,
+                    osVersion = profile.osVersion,
+                    deviceOs = profile.os
+                )
 
                 loadSettingsIntoFields()
             }
@@ -506,12 +506,8 @@ class NetworkToolsActivity : Activity() {
     private fun loadSettingsIntoFields() {
         if (!::clientSelector.isInitialized) return
 
-        clientSelector.text = when (settings.clientPreset) {
-            "happ" -> "Happ"
-            "v2raytun" -> "v2RayTun"
-            "inocy" -> "Inocy"
-            else -> "Нет"
-        }
+        clientSelector.text =
+            SubscriptionIdentity.preset(settings.clientPreset).label
 
         deviceSelector.text = settings.deviceProfile
 
@@ -531,6 +527,20 @@ class NetworkToolsActivity : Activity() {
         acceptLanguageField.setText(settings.acceptLanguage)
         clientHeaderField.setText(settings.clientHeader)
         extraHeadersField.setText(settings.extraHeaders)
+
+        updateFieldVisibility()
+    }
+
+    /** Показываем только те заголовки, которые отправляет выбранный клиент. */
+    private fun updateFieldVisibility() {
+        val visible = SubscriptionIdentity
+            .preset(settings.clientPreset)
+            .fields
+
+        for ((key, block) in fieldBlocks) {
+            block.visibility =
+                if (key in visible) View.VISIBLE else View.GONE
+        }
     }
 
     private fun collectSettings(): ClientIdentitySettings {
@@ -613,9 +623,14 @@ class NetworkToolsActivity : Activity() {
         parent: LinearLayout,
         label: String,
         hint: String,
-        multiline: Boolean = false
+        multiline: Boolean = false,
+        key: IdentityField? = null
     ): EditText {
-        parent.addView(fieldLabel(label))
+        val block = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        block.addView(fieldLabel(label))
 
         val field = EditText(this).apply {
             this.hint = hint
@@ -644,8 +659,14 @@ class NetworkToolsActivity : Activity() {
             setPadding(dp(12), dp(11), dp(12), dp(11))
         }
 
-        parent.addView(field)
-        parent.addView(space(9))
+        block.addView(field)
+        block.addView(space(9))
+
+        parent.addView(block)
+
+        if (key != null) {
+            fieldBlocks[key] = block
+        }
 
         return field
     }
