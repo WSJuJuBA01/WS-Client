@@ -1,4 +1,3 @@
-
 package com.wsclient
 
 import android.content.Context
@@ -13,7 +12,8 @@ import java.util.zip.GZIPInputStream
 
 data class SubscriptionUpdateResult(
     val imported: Int,
-    val profiles: List<ServerProfile>
+    val profiles: List<ServerProfile>,
+    val removed: Int = 0
 )
 
 object SubscriptionManager {
@@ -132,6 +132,14 @@ object SubscriptionManager {
                     error("В подписке нет поддерживаемых серверов")
                 }
 
+                // Серверы, которые эта подписка отдавала в прошлый раз.
+                val groupId = SubscriptionStore.idFor(url)
+
+                val previousIds = SubscriptionStore.all(context)
+                    .firstOrNull { it.id == groupId }
+                    ?.profileIds
+                    .orEmpty()
+
                 // Сохраняем профили через существующее хранилище.
                 ProfileStore.addAll(
                     context,
@@ -158,9 +166,28 @@ object SubscriptionManager {
                     actualProfiles
                 )
 
+                // Подписка могла сменить часть серверов (например, AUTO).
+                // Старые, которых в ответе больше нет, удаляем, иначе они
+                // остаются без группы и попадают в «Отдельные серверы».
+                val currentIds = actualProfiles
+                    .map { it.id }
+                    .toSet()
+
+                val staleIds = previousIds - currentIds
+
+                val usedByOtherGroups = SubscriptionStore.all(context)
+                    .filter { it.id != groupId }
+                    .flatMap { it.profileIds }
+                    .toSet()
+
+                val toRemove = staleIds - usedByOtherGroups
+
+                ProfileStore.removeAll(context, toRemove)
+
                 SubscriptionUpdateResult(
                     imported = actualProfiles.size,
-                    profiles = actualProfiles
+                    profiles = actualProfiles,
+                    removed = toRemove.size
                 )
             } finally {
                 connection.disconnect()
