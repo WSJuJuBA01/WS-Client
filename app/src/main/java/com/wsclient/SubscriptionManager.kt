@@ -54,7 +54,7 @@ object SubscriptionManager {
 
                     setRequestProperty(
                         "Accept",
-                        "application/json, */*"
+                        "application/json, text/plain, */*"
                     )
 
                     setRequestProperty(
@@ -108,25 +108,10 @@ object SubscriptionManager {
                 }.trimStart('\uFEFF').trim()
 
                 if (body.isBlank()) {
-                    error("Сервер вернул пустой JSON")
+                    error("Сервер вернул пустой ответ")
                 }
 
-                val contentType =
-                    connection.contentType.orEmpty()
-
-                if (
-                    !body.startsWith("{") &&
-                    !body.startsWith("[")
-                ) {
-                    error(
-                        "Ответ сервера не является JSON.\n" +
-                            "Content-Type: $contentType\n" +
-                            "Начало ответа: ${body.take(180)}"
-                    )
-                }
-
-                val parsedProfiles =
-                    XrayJsonSubscriptionParser.parse(body)
+                val parsedProfiles = parseBody(body)
 
                 if (parsedProfiles.isEmpty()) {
                     error("В подписке нет поддерживаемых серверов")
@@ -193,6 +178,43 @@ object SubscriptionManager {
                 connection.disconnect()
             }
         }
+
+    /**
+     * JSON (Xray-конфиги) или текстовый список ссылок:
+     * vless://, vmess://, trojan://, ss://, hy2://, hysteria2://
+     * (построчно либо целиком в base64).
+     */
+    private fun parseBody(body: String): List<ServerProfile> {
+        if (body.startsWith("{") || body.startsWith("[")) {
+            return XrayJsonSubscriptionParser.parse(body)
+        }
+
+        val result = try {
+            LinkListParser.parse(body)
+        } catch (e: IllegalArgumentException) {
+            error(
+                "Не удалось распознать подписку: ${e.message}\n" +
+                    "Начало ответа: ${body.take(180)}"
+            )
+        }
+
+        if (result.profiles.isEmpty()) {
+            error(
+                buildString {
+                    append("В подписке нет поддерживаемых серверов")
+
+                    val details = result.errors.take(5)
+
+                    if (details.isNotEmpty()) {
+                        append("\n")
+                        append(details.joinToString("\n"))
+                    }
+                }
+            )
+        }
+
+        return result.profiles
+    }
 
     private fun readLimited(input: InputStream): String {
         val output = ByteArrayOutputStream()
