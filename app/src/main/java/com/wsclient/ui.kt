@@ -22,7 +22,10 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
-enum class Glyph { POWER, DOWNLOAD, LAYERS, CHEVRON, GAUGE, REFRESH, MORE, SERVER, GLOBE, HOME, LIST, CHART, GEAR, PLUS }
+enum class Glyph {
+    POWER, DOWNLOAD, LAYERS, CHEVRON, GAUGE, REFRESH, MORE, SERVER, GLOBE, HOME, LIST, CHART, GEAR, PLUS,
+    COPY, CHECK, TRASH, EDIT, PIN, LINK, CLOSE, CODE
+}
 
 object Ui {
     /** Applies [percent] (0..100) opacity to [color]. */
@@ -186,6 +189,52 @@ object Glyphs {
             Glyph.PLUS -> {
                 c.drawLine(12f, 5f, 12f, 19f, p)
                 c.drawLine(5f, 12f, 19f, 12f, p)
+            }
+            Glyph.COPY -> {
+                c.drawRoundRect(RectF(9f, 9f, 22f, 22f), 2.5f, 2.5f, p)
+                path.reset()
+                path.moveTo(5f, 15f); path.lineTo(4f, 15f); path.quadTo(2f, 15f, 2f, 13f)
+                path.lineTo(2f, 4f); path.quadTo(2f, 2f, 4f, 2f)
+                path.lineTo(13f, 2f); path.quadTo(15f, 2f, 15f, 4f); path.lineTo(15f, 5f)
+                c.drawPath(path, p)
+            }
+            Glyph.CHECK -> poly(c, p, false, 4f, 12.5f, 9.5f, 18f, 20f, 6.5f)
+            Glyph.TRASH -> {
+                c.drawLine(3f, 6f, 21f, 6f, p)
+                path.reset()
+                path.moveTo(19f, 6f); path.lineTo(18f, 20f); path.quadTo(18f, 22f, 16f, 22f)
+                path.lineTo(8f, 22f); path.quadTo(6f, 22f, 6f, 20f); path.lineTo(5f, 6f)
+                c.drawPath(path, p)
+                path.reset()
+                path.moveTo(8f, 6f); path.lineTo(8f, 4f); path.quadTo(8f, 2f, 10f, 2f)
+                path.lineTo(14f, 2f); path.quadTo(16f, 2f, 16f, 4f); path.lineTo(16f, 6f)
+                c.drawPath(path, p)
+                c.drawLine(10f, 11f, 10f, 17f, p)
+                c.drawLine(14f, 11f, 14f, 17f, p)
+            }
+            Glyph.EDIT -> {
+                poly(c, p, true, 15.5f, 4.5f, 19.5f, 8.5f, 8f, 20f, 3.5f, 20.5f, 4f, 16f)
+                c.drawLine(13f, 7f, 17f, 11f, p)
+            }
+            Glyph.PIN -> {
+                poly(c, p, true, 9f, 3f, 15f, 3f, 14f, 10f, 18f, 14f, 6f, 14f, 10f, 10f)
+                c.drawLine(12f, 14f, 12f, 21f, p)
+            }
+            Glyph.LINK -> {
+                c.save()
+                c.rotate(-45f, 12f, 12f)
+                c.drawRoundRect(RectF(1.5f, 8.5f, 13f, 15.5f), 3.5f, 3.5f, p)
+                c.drawRoundRect(RectF(11f, 8.5f, 22.5f, 15.5f), 3.5f, 3.5f, p)
+                c.restore()
+            }
+            Glyph.CLOSE -> {
+                c.drawLine(5f, 5f, 19f, 19f, p)
+                c.drawLine(19f, 5f, 5f, 19f, p)
+            }
+            Glyph.CODE -> {
+                poly(c, p, false, 8f, 6f, 2f, 12f, 8f, 18f)
+                poly(c, p, false, 16f, 6f, 22f, 12f, 16f, 18f)
+                c.drawLine(14f, 4f, 10f, 20f, p)
             }
         }
         c.restore()
