@@ -1,4 +1,3 @@
-
 package com.wsclient
 
 import android.app.Activity
@@ -11,12 +10,10 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
-import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
-import android.widget.Toast
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.text.Editable
@@ -36,7 +33,7 @@ class SplitTunnelingActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
 
-    private lateinit var allowList: CheckBox
+    private lateinit var allowList: AppCheckBox
     private lateinit var list: ListView
     private lateinit var search: EditText
     private lateinit var countText: TextView
@@ -114,10 +111,10 @@ class SplitTunnelingActivity : Activity() {
             }
         )
 
-        allowList = CheckBox(this).apply {
-            text = "Только выбранные приложения через VPN"
-            textSize = 13f
-            setTextColor(palette.foreground)
+        allowList = AppCheckBox(
+            this,
+            "Только выбранные приложения через VPN"
+        ).apply {
             isChecked = prefs.getBoolean(
                 "split_allowlist",
                 false
@@ -196,6 +193,10 @@ class SplitTunnelingActivity : Activity() {
                 14
             )
             setPadding(0, dp(16), 0, dp(16))
+
+            isClickable = true
+            isFocusable = true
+            Ui.pressable(this)
 
             setOnClickListener {
                 saveSettings()
@@ -288,11 +289,7 @@ class SplitTunnelingActivity : Activity() {
                     loadingFinished = true
                     countText.text = "Не удалось загрузить приложения"
 
-                    Toast.makeText(
-                        this,
-                        "Ошибка загрузки списка приложений",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    AppToast.show(this, "Ошибка загрузки списка приложений", true)
                 }
             }
         }
@@ -479,31 +476,15 @@ class SplitTunnelingActivity : Activity() {
             convertView: View?,
             parent: ViewGroup
         ): View {
-            val checkbox = (convertView as? CheckBox)
-                ?: CheckBox(this@SplitTunnelingActivity).apply {
-                    textSize = 12f
-                    setTextColor(palette.foreground)
-                    setPadding(
-                        dp(3),
-                        dp(7),
-                        dp(3),
-                        dp(7)
-                    )
-
-                    buttonTintList =
-                        android.content.res.ColorStateList.valueOf(
-                            Customization.accent(
-                                this@SplitTunnelingActivity
-                            )
-                        )
-                }
+            val checkbox = (convertView as? AppCheckBox)
+                ?: AppCheckBox(this@SplitTunnelingActivity)
 
             val app = getItem(position)
 
             checkbox.setOnCheckedChangeListener(null)
 
-            checkbox.text =
-                "${app.label}\n${app.packageName}"
+            checkbox.text = app.label
+            checkbox.subtitle = app.packageName
 
             checkbox.isChecked =
                 app.packageName in selected
@@ -528,11 +509,7 @@ class SplitTunnelingActivity : Activity() {
 
     private fun saveSettings() {
         if (allowList.isChecked && selected.isEmpty()) {
-            Toast.makeText(
-                this,
-                "Выбери хотя бы одно приложение",
-                Toast.LENGTH_LONG
-            ).show()
+            AppToast.show(this, "Выбери хотя бы одно приложение", true)
             return
         }
 
@@ -547,11 +524,7 @@ class SplitTunnelingActivity : Activity() {
             )
             .apply()
 
-        Toast.makeText(
-            this,
-            "Сохранено. Переподключи VPN.",
-            Toast.LENGTH_LONG
-        ).show()
+        AppToast.later("Сохранено. Переподключи VPN.")
 
         finish()
     }
