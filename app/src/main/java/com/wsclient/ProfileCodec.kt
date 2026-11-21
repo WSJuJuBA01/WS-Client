@@ -21,23 +21,33 @@ data class ServerProfile(
 /** Parsers for Xray-compatible share links. Unsupported transports fail explicitly. */
 object ProfileCodec {
     fun parse(link: String): ServerProfile {
-        val input = link.trim()
-        require(input.isNotEmpty()) { "Пустая ссылка" }
+        val raw = link.trim()
+        require(raw.isNotEmpty()) { "Пустая ссылка" }
+
+        if (raw.startsWith("{")) return parseJsonOutbound(raw)
+
+        // Пробелы и эмодзи в имени ломают java.net.URI.
+        val input = LinkListParser.sanitizeLink(raw)
 
         return when {
             input.startsWith("vless://", true) -> parseVless(input)
             input.startsWith("vmess://", true) -> parseVmess(input)
             input.startsWith("trojan://", true) -> parseTrojan(input)
             input.startsWith("ss://", true) -> parseShadowsocks(input)
-            input.startsWith("{") -> parseJsonOutbound(input)
+
             input.startsWith("hysteria2://", true) ||
                 input.startsWith("hy2://", true) ->
+                Hysteria2Codec.parse(input)
+
+            input.startsWith("hysteria://", true) ||
+                input.startsWith("hy://", true) ->
                 throw IllegalArgumentException(
-                    "Импорт Hysteria2 пока не реализован в WS Client"
+                    "Hysteria v1 не поддерживается, нужен Hysteria2 (hy2://)"
                 )
 
             else -> throw IllegalArgumentException(
-                "Неподдерживаемый формат ссылки"
+                "Неподдерживаемый формат ссылки: " +
+                    input.substringBefore("://", input.take(20))
             )
         }
     }
