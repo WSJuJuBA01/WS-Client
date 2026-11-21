@@ -96,6 +96,16 @@ object ProfileStore {
         )
     }
 
+    @Synchronized
+    fun removeAll(context: Context, ids: Set<String>) {
+        if (ids.isEmpty()) return
+
+        save(
+            context,
+            getAll(context).filterNot { it.id in ids }
+        )
+    }
+
     fun sameConnection(
         a: ServerProfile,
         b: ServerProfile
