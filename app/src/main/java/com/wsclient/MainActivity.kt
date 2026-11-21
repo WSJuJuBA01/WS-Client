@@ -767,8 +767,7 @@ class MainActivity : Activity() {
 
         return card
     }
-
-    // ---------------------------------------------------------
+        // ---------------------------------------------------------
     // Серверы
     // ---------------------------------------------------------
 
@@ -878,13 +877,17 @@ class MainActivity : Activity() {
             .flatMap { it.profileIds }
             .toSet()
 
+        val profilesById = profiles.associateBy { it.id }
+
         groups
             .sortedByDescending {
                 SubscriptionStore.isPinned(this, it.id)
             }
             .forEach { group ->
-                val members = profiles.filter {
-                    it.id in group.profileIds
+                // Порядок берём из группы (он равен порядку в подписке),
+                // а не из общего хранилища профилей.
+                val members = group.profileIds.mapNotNull {
+                    profilesById[it]
                 }
 
                 if (members.isNotEmpty()) {
@@ -1037,8 +1040,7 @@ class MainActivity : Activity() {
 
             card.addView(actions)
         } else {
-            // Для отдельных серверов тоже доступна
-            // массовая проверка пинга.
+            // Для отдельных серверов: массовый пинг и очистка списка.
             card.space(14)
 
             val actions = row()
@@ -1050,7 +1052,21 @@ class MainActivity : Activity() {
                 ) {
                     pingServers(members)
                 },
-                lp(MP, dp(68))
+                lp(0, dp(68), 1f).apply {
+                    rightMargin = dp(5)
+                }
+            )
+
+            actions.addView(
+                groupButton(
+                    Glyph.MORE,
+                    "Очистить"
+                ) {
+                    confirmClearLooseServers(members)
+                },
+                lp(0, dp(68), 1f).apply {
+                    leftMargin = dp(5)
+                }
             )
 
             card.addView(actions)
@@ -1106,10 +1122,49 @@ class MainActivity : Activity() {
                     13f,
                     palette.muted
                 ).apply {
-                    setPadding(0, dp(5), 0, 0)
-                }
+                    gravity = Gravity.CENTER
+                    textAlignment = View.TEXT_ALIGNMENT_CENTER
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                    setPadding(dp(4), dp(5), dp(4), 0)
+                },
+                lp(MP, WC)
             )
         }.onTap(action)
+
+    private fun confirmClearLooseServers(
+        members: List<ServerProfile>
+    ) {
+        AlertDialog.Builder(this)
+            .setTitle("Очистить отдельные серверы?")
+            .setMessage(
+                "Будут удалены все серверы из этого списка " +
+                    "(${members.size}). Серверы внутри подписок " +
+                    "не затрагиваются."
+            )
+            .setPositiveButton("Удалить") { _, _ ->
+                val ids = members.map { it.id }.toSet()
+
+                ProfileStore.removeAll(this, ids)
+
+                ids.forEach {
+                    pingResults.remove(it)
+                    pingingIds.remove(it)
+                }
+
+                if (selectedId?.let { it in ids } == true) {
+                    selectedId = null
+
+                    prefs().edit()
+                        .remove("active_profile")
+                        .apply()
+                }
+
+                refreshProfiles()
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
 
     private fun addServerRow(
         profile: ServerProfile,
@@ -1652,8 +1707,7 @@ class MainActivity : Activity() {
 
         return row
     }
-
-    // ---------------------------------------------------------
+        // ---------------------------------------------------------
     // Добавление серверов
     // ---------------------------------------------------------
 
@@ -1851,6 +1905,13 @@ class MainActivity : Activity() {
     ) {
         showMessage("Загружаю подписку…")
 
+        // После обновления старая запись выбранного сервера может
+        // исчезнуть (например, у AUTO меняются адреса). Запоминаем имя,
+        // чтобы выбрать одноимённый сервер из свежего списка.
+        val previousName = ProfileStore.getAll(this)
+            .firstOrNull { it.id == selectedId }
+            ?.name
+
         Thread {
             try {
                 val result = kotlinx.coroutines.runBlocking {
@@ -1869,10 +1930,34 @@ class MainActivity : Activity() {
                 }
 
                 runOnUiThread {
+                    val selectedStillExists =
+                        ProfileStore.getAll(this@MainActivity)
+                            .any { it.id == selectedId }
+
+                    if (!selectedStillExists && previousName != null) {
+                        result.profiles
+                            .firstOrNull { it.name == previousName }
+                            ?.let { match ->
+                                selectedId = match.id
+
+                                prefs().edit()
+                                    .putString(
+                                        "active_profile",
+                                        match.id
+                                    )
+                                    .apply()
+                            }
+                    }
+
                     refreshProfiles()
 
                     showMessage(
-                        "Импортировано серверов: ${result.imported}"
+                        "Импортировано серверов: ${result.imported}" +
+                            if (result.removed > 0) {
+                                ", удалено устаревших: ${result.removed}"
+                            } else {
+                                ""
+                            }
                     )
                 }
             } catch (e: Exception) {
