@@ -2,14 +2,12 @@ package com.wsclient
 
 import android.Manifest
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.BroadcastReceiver
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -19,7 +17,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.text.InputType
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
@@ -27,9 +24,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.Switch
 import android.widget.TextView
-import android.widget.Toast
 import java.util.concurrent.ConcurrentHashMap
 
 private const val MP = -1
@@ -196,12 +191,21 @@ class MainActivity : Activity() {
             return
         }
 
+        // Показываем сообщение, отложенное другим экраном перед finish().
+        AppToast.showPending(this)
+
         if (XrayManager.running) {
             connectionState = VPNService.STATE_CONNECTED
         }
 
         refreshProfiles()
         updateConnectionUi()
+    }
+
+    override fun onDestroy() {
+        trafficHandler.removeCallbacks(trafficUpdater)
+        unregisterStateReceiver()
+        super.onDestroy()
     }
 
     // Берём свежие значения, а не закэшированные,
@@ -1010,7 +1014,7 @@ class MainActivity : Activity() {
                     pingServers(members)
                 },
                 lp(0, dp(68), 1f).apply {
-                    rightMargin = dp(5)
+                    rightMargin = dp(3)
                 }
             )
 
@@ -1022,8 +1026,24 @@ class MainActivity : Activity() {
                     refreshSubscription(group)
                 },
                 lp(0, dp(68), 1f).apply {
-                    leftMargin = dp(5)
-                    rightMargin = dp(5)
+                    leftMargin = dp(3)
+                    rightMargin = dp(3)
+                }
+            )
+
+            actions.addView(
+                groupButton(
+                    Glyph.COPY,
+                    "Копировать"
+                ) {
+                    copyProfiles(
+                        members,
+                        "Конфигурации подписки"
+                    )
+                },
+                lp(0, dp(68), 1f).apply {
+                    leftMargin = dp(3)
+                    rightMargin = dp(3)
                 }
             )
 
@@ -1035,13 +1055,14 @@ class MainActivity : Activity() {
                     showGroupMenu(group)
                 },
                 lp(0, dp(68), 1f).apply {
-                    leftMargin = dp(5)
+                    leftMargin = dp(3)
                 }
             )
 
             card.addView(actions)
         } else {
-            // Для отдельных серверов: массовый пинг и очистка списка.
+            // Для отдельных серверов: массовый пинг,
+            // копирование всех конфигураций и очистка списка.
             card.space(14)
 
             val actions = row()
@@ -1054,7 +1075,23 @@ class MainActivity : Activity() {
                     pingServers(members)
                 },
                 lp(0, dp(68), 1f).apply {
-                    rightMargin = dp(5)
+                    rightMargin = dp(3)
+                }
+            )
+
+            actions.addView(
+                groupButton(
+                    Glyph.COPY,
+                    "Копировать"
+                ) {
+                    copyProfiles(
+                        members,
+                        "Отдельные серверы"
+                    )
+                },
+                lp(0, dp(68), 1f).apply {
+                    leftMargin = dp(3)
+                    rightMargin = dp(3)
                 }
             )
 
@@ -1066,7 +1103,7 @@ class MainActivity : Activity() {
                     confirmClearLooseServers(members)
                 },
                 lp(0, dp(68), 1f).apply {
-                    leftMargin = dp(5)
+                    leftMargin = dp(3)
                 }
             )
 
@@ -1120,23 +1157,179 @@ class MainActivity : Activity() {
             addView(
                 text(
                     label,
-                    13f,
+                    11f,
                     palette.muted
                 ).apply {
                     gravity = Gravity.CENTER
                     textAlignment = View.TEXT_ALIGNMENT_CENTER
                     maxLines = 1
                     ellipsize = TextUtils.TruncateAt.END
-                    setPadding(dp(4), dp(5), dp(4), 0)
+                    setPadding(dp(2), dp(5), dp(2), 0)
                 },
                 lp(MP, WC)
             )
         }.onTap(action)
 
+    // ---------------------------------------------------------
+    // Копирование конфигураций
+    // ---------------------------------------------------------
+
+    /**
+     * Возвращает ссылку для импорта, если она есть.
+     * Если rawLink пустой или не является поддерживаемой ссылкой,
+     * возвращает сохранённый JSON-outbound.
+     */
+    private fun profileExport(profile: ServerProfile): String {
+        val raw = profile.rawLink.trim()
+
+        val supportedSchemes = listOf(
+            "vless://",
+            "vmess://",
+            "trojan://",
+            "ss://",
+            "hy2://",
+            "hysteria2://"
+        )
+
+        val hasLink = supportedSchemes.any {
+            raw.startsWith(it, ignoreCase = true)
+        }
+
+        return if (hasLink) {
+            raw
+        } else {
+            profile.config.toString()
+        }
+    }
+
+    /**
+     * Копирует все профили в буфер обмена.
+     * Каждый профиль располагается на отдельной строке.
+     */
+    private fun copyProfiles(
+        profiles: List<ServerProfile>,
+        label: String
+    ) {
+        val configs = profiles
+            .distinctBy { it.id }
+            .map { profileExport(it) }
+            .filter { it.isNotBlank() }
+
+        if (configs.isEmpty()) {
+            AppToast.show(
+                this,
+                "Нет конфигураций для копирования"
+            )
+            return
+        }
+
+        AppClipboard.copy(
+            this,
+            label,
+            configs.joinToString("\n")
+        )
+
+        AppToast.show(
+            this,
+            "Скопировано конфигураций: ${configs.size}"
+        )
+    }
+
+    /**
+     * Копирует ссылку сервера или JSON, если ссылки нет.
+     */
+    private fun copyProfileLink(profile: ServerProfile) {
+        val value = profileExport(profile)
+
+        AppClipboard.copy(
+            this,
+            profile.name,
+            value
+        )
+
+        AppToast.show(
+            this,
+            if (value.startsWith("{")) {
+                "JSON-конфигурация скопирована"
+            } else {
+                "Ссылка сервера скопирована"
+            }
+        )
+    }
+
+    /**
+     * Копирует сохранённый JSON-outbound с отступами.
+     */
+    private fun copyProfileJson(profile: ServerProfile) {
+        AppClipboard.copy(
+            this,
+            "${profile.name} JSON",
+            profile.config.toString(2)
+        )
+
+        AppToast.show(
+            this,
+            "JSON-конфигурация скопирована"
+        )
+    }
+
+    /**
+     * Меню долгого нажатия на сервер.
+     */
+    private fun showProfileMenu(profile: ServerProfile) {
+        val items = listOf(
+            AppDialog.Item(
+                if (
+                    profile.rawLink.trim().let { raw ->
+                        listOf(
+                            "vless://",
+                            "vmess://",
+                            "trojan://",
+                            "ss://",
+                            "hy2://",
+                            "hysteria2://"
+                        ).any {
+                            raw.startsWith(it, true)
+                        }
+                    }
+                ) {
+                    "Скопировать ссылку"
+                } else {
+                    "Скопировать конфигурацию"
+                },
+                Glyph.COPY
+            ),
+            AppDialog.Item(
+                "Скопировать JSON",
+                Glyph.CODE
+            ),
+            AppDialog.Item(
+                "Удалить сервер",
+                Glyph.TRASH,
+                true
+            )
+        )
+
+        AppDialog.Builder(this)
+            .setTitle(profile.name)
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> copyProfileLink(profile)
+                    1 -> copyProfileJson(profile)
+                    2 -> confirmDeleteProfile(profile)
+                }
+            }
+            .show()
+    }
+
+    // ---------------------------------------------------------
+    // Массовые действия и отдельные серверы
+    // ---------------------------------------------------------
+
     private fun confirmClearLooseServers(
         members: List<ServerProfile>
     ) {
-        AlertDialog.Builder(this)
+        AppDialog.Builder(this)
             .setTitle("Очистить отдельные серверы?")
             .setMessage(
                 "Будут удалены все серверы из этого списка " +
@@ -1164,6 +1357,7 @@ class MainActivity : Activity() {
                 refreshProfiles()
             }
             .setNegativeButton("Отмена", null)
+            .danger()
             .show()
     }
 
@@ -1186,8 +1380,10 @@ class MainActivity : Activity() {
                 selectProfile(profile.id)
             }
 
+        // Долгое нажатие теперь открывает меню действий,
+        // а не удаляет сервер сразу.
         row.setOnLongClickListener {
-            confirmDeleteProfile(profile)
+            showProfileMenu(profile)
             true
         }
 
@@ -1305,6 +1501,32 @@ class MainActivity : Activity() {
             lp(dp(32), dp(32))
         )
 
+        // Копирование одного сервера без открытия меню.
+        val copyButton = FrameLayout(this).apply {
+            contentDescription =
+                "Копировать конфигурацию сервера ${profile.name}"
+
+            addView(
+                GlyphView(
+                    this@MainActivity,
+                    Glyph.COPY,
+                    palette.muted
+                ),
+                FrameLayout.LayoutParams(
+                    dp(21),
+                    dp(21),
+                    Gravity.CENTER
+                )
+            )
+        }.onTap {
+            copyProfileLink(profile)
+        }
+
+        row.addView(
+            copyButton,
+            lp(dp(32), dp(32))
+        )
+
         parent.addView(
             row,
             lp(MP, WC)
@@ -1334,7 +1556,7 @@ class MainActivity : Activity() {
             )
         }
 
-        private fun pingServers(
+    private fun pingServers(
         members: List<ServerProfile>
     ) {
         // Не запускаем повторные проверки одного сервера.
@@ -1432,7 +1654,7 @@ class MainActivity : Activity() {
                 }
             }
         }.start()
-        }
+    }
 
     // ---------------------------------------------------------
     // Статистика
@@ -1498,6 +1720,7 @@ class MainActivity : Activity() {
         }
 
         timeCard.addView(statTime)
+
         addView(timeCard)
     }
 
@@ -1601,26 +1824,8 @@ class MainActivity : Activity() {
 
         space(10)
 
-        val switch = Switch(this@MainActivity).apply {
+        val switch = AppSwitch(this@MainActivity).apply {
             isChecked = AutoConnect.enabled(this@MainActivity)
-
-            val states = arrayOf(
-                intArrayOf(android.R.attr.state_checked),
-                intArrayOf()
-            )
-
-            thumbTintList = ColorStateList(
-                states,
-                intArrayOf(accent, palette.muted)
-            )
-
-            trackTintList = ColorStateList(
-                states,
-                intArrayOf(
-                    Ui.withAlpha(accent, 40),
-                    Ui.withAlpha(palette.muted, 30)
-                )
-            )
 
             setOnCheckedChangeListener { _, value ->
                 AutoConnect.setEnabled(
@@ -1757,7 +1962,7 @@ class MainActivity : Activity() {
             "Добавить подписку"
         )
 
-        AlertDialog.Builder(this)
+        AppDialog.Builder(this)
             .setTitle("Добавить")
             .setItems(options) { _, which ->
                 when (which) {
@@ -1789,19 +1994,18 @@ class MainActivity : Activity() {
     }
 
     private fun importProfile() {
-        val input = EditText(this).apply {
-            hint = "vless://, vmess://, trojan://, ss://, hy2://"
+        val input = AppInput.create(
+            context = this,
+            hint = "vless://, vmess://, trojan://, ss://, hy2://",
+            multiline = true
+        )
 
-            inputType =
-                InputType.TYPE_CLASS_TEXT or
-                    InputType.TYPE_TEXT_FLAG_MULTI_LINE
-
-            minLines = 3
-        }
-
-        AlertDialog.Builder(this)
+        AppDialog.Builder(this)
             .setTitle("Добавить сервер")
-            .setMessage("Вставьте ссылку, несколько ссылок или ссылку на подписку")
+            .setMessage(
+                "Вставьте ссылку, несколько ссылок " +
+                    "или ссылку на подписку"
+            )
             .setView(input)
             .setPositiveButton("Добавить") { _, _ ->
                 importProfileValue(
@@ -1889,35 +2093,41 @@ class MainActivity : Activity() {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(
-                dp(20),
+                dp(4),
                 dp(8),
-                dp(20),
+                dp(4),
                 0
             )
         }
 
-        val urlInput = EditText(this).apply {
-            hint = "https://example.com/subscription"
+        val urlInput = AppInput.create(
+            context = this,
+            hint = "https://example.com/subscription",
+            text = existing?.url.orEmpty(),
+            uri = true
+        )
 
-            inputType =
-                InputType.TYPE_CLASS_TEXT or
-                    InputType.TYPE_TEXT_VARIATION_URI
+        val titleInput = AppInput.create(
+            context = this,
+            hint = "Название подписки (необязательно)",
+            text = existing?.title.orEmpty()
+        )
 
-            if (existing != null) {
-                setText(existing.url)
+        panel.addView(
+            urlInput,
+            lp(MP, WC)
+        )
+
+        panel.addView(
+            View(this).apply {
+                layoutParams = lp(1, dp(10))
             }
-        }
+        )
 
-        val titleInput = EditText(this).apply {
-            hint = "Название подписки (необязательно)"
-
-            if (existing != null) {
-                setText(existing.title)
-            }
-        }
-
-        panel.addView(urlInput)
-        panel.addView(titleInput)
+        panel.addView(
+            titleInput,
+            lp(MP, WC)
+        )
 
         panel.addView(
             TextView(this).apply {
@@ -1936,6 +2146,10 @@ class MainActivity : Activity() {
                     dp(8)
                 )
 
+                isClickable = true
+                isFocusable = true
+                Ui.pressable(this)
+
                 setOnClickListener {
                     startActivity(
                         Intent(
@@ -1947,7 +2161,7 @@ class MainActivity : Activity() {
             }
         )
 
-        AlertDialog.Builder(this)
+        AppDialog.Builder(this)
             .setTitle(
                 if (existing == null) {
                     "Новая подписка"
@@ -1964,8 +2178,8 @@ class MainActivity : Activity() {
                 val title = titleInput.text.toString().trim()
 
                 if (
-                    !url.startsWith("https://") &&
-                    !url.startsWith("http://")
+                    !url.startsWith("https://", true) &&
+                    !url.startsWith("http://", true)
                 ) {
                     showMessage("Укажите корректный URL подписки")
                     return@setPositiveButton
@@ -2109,10 +2323,12 @@ class MainActivity : Activity() {
                 "Закрепить сверху"
             },
             "Настройки эмуляции клиента",
+            "Скопировать все конфиги",
+            "Скопировать ссылку подписки",
             "Удалить группу"
         )
 
-        AlertDialog.Builder(this)
+        AppDialog.Builder(this)
             .setTitle(group.title)
             .setItems(options) { _, which ->
                 when (which) {
@@ -2139,7 +2355,30 @@ class MainActivity : Activity() {
                         )
                     }
 
-                    4 -> confirmRemoveGroup(group)
+                    4 -> {
+                        val profiles = ProfileStore.getAll(this)
+                            .filter { it.id in group.profileIds }
+
+                        copyProfiles(
+                            profiles,
+                            "Конфигурации подписки"
+                        )
+                    }
+
+                    5 -> {
+                        AppClipboard.copy(
+                            this,
+                            "Ссылка подписки",
+                            group.url
+                        )
+
+                        AppToast.show(
+                            this,
+                            "Ссылка подписки скопирована"
+                        )
+                    }
+
+                    6 -> confirmRemoveGroup(group)
                 }
             }
             .show()
@@ -2148,12 +2387,13 @@ class MainActivity : Activity() {
     private fun renameSubscription(
         group: SubscriptionGroup
     ) {
-        val input = EditText(this).apply {
-            setText(group.title)
-            hint = "Название подписки"
-        }
+        val input = AppInput.create(
+            context = this,
+            hint = "Название подписки",
+            text = group.title
+        )
 
-        AlertDialog.Builder(this)
+        AppDialog.Builder(this)
             .setTitle("Название подписки")
             .setView(input)
             .setPositiveButton("Сохранить") { _, _ ->
@@ -2172,7 +2412,7 @@ class MainActivity : Activity() {
     private fun confirmRemoveGroup(
         group: SubscriptionGroup
     ) {
-        AlertDialog.Builder(this)
+        AppDialog.Builder(this)
             .setTitle("Удалить подписку?")
             .setMessage(
                 "Группа «${group.title}» будет удалена. " +
@@ -2187,6 +2427,7 @@ class MainActivity : Activity() {
                 refreshProfiles()
             }
             .setNegativeButton("Отмена", null)
+            .danger()
             .show()
     }
 
@@ -2203,7 +2444,7 @@ class MainActivity : Activity() {
     private fun confirmDeleteProfile(
         profile: ServerProfile
     ) {
-        AlertDialog.Builder(this)
+        AppDialog.Builder(this)
             .setTitle("Удалить сервер?")
             .setMessage(
                 "Профиль «${profile.name}» будет удалён."
@@ -2228,6 +2469,7 @@ class MainActivity : Activity() {
                 refreshProfiles()
             }
             .setNegativeButton("Отмена", null)
+            .danger()
             .show()
     }
 
@@ -2609,11 +2851,7 @@ class MainActivity : Activity() {
         (value * resources.displayMetrics.density).toInt()
 
     private fun showMessage(message: String) {
-        Toast.makeText(
-            this,
-            message,
-            Toast.LENGTH_LONG
-        ).show()
+        AppToast.show(this, message)
     }
 
     companion object {
