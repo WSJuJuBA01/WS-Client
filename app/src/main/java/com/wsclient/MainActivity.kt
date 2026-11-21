@@ -767,7 +767,7 @@ class MainActivity : Activity() {
 
         return card
     }
-    
+
     // ---------------------------------------------------------
     // Серверы
     // ---------------------------------------------------------
@@ -1745,7 +1745,7 @@ class MainActivity : Activity() {
 
         return row
     }
-    
+
     // ---------------------------------------------------------
     // Добавление серверов
     // ---------------------------------------------------------
@@ -1790,7 +1790,7 @@ class MainActivity : Activity() {
 
     private fun importProfile() {
         val input = EditText(this).apply {
-            hint = "vless://, vmess://, trojan://, ss://"
+            hint = "vless://, vmess://, trojan://, ss://, hy2://"
 
             inputType =
                 InputType.TYPE_CLASS_TEXT or
@@ -1801,7 +1801,7 @@ class MainActivity : Activity() {
 
         AlertDialog.Builder(this)
             .setTitle("Добавить сервер")
-            .setMessage("Вставьте ссылку конфигурации")
+            .setMessage("Вставьте ссылку, несколько ссылок или ссылку на подписку")
             .setView(input)
             .setPositiveButton("Добавить") { _, _ ->
                 importProfileValue(
@@ -1813,18 +1813,65 @@ class MainActivity : Activity() {
     }
 
     private fun importProfileValue(value: String) {
+        val text = value.trim()
+
+        // Вставили адрес подписки — загружаем как подписку.
+        if (
+            !text.contains('\n') &&
+            (
+                text.startsWith("https://", true) ||
+                    text.startsWith("http://", true)
+                )
+        ) {
+            updateSubscription(text)
+            return
+        }
+
         try {
-            val profile = ProfileCodec.parse(value)
-            val stored = ProfileStore.add(this, profile)
+            val parsed = if (text.startsWith("{")) {
+                LinkImportResult(
+                    listOf(ProfileCodec.parse(text)),
+                    emptyList()
+                )
+            } else {
+                LinkListParser.parse(text)
+            }
 
-            selectedId = stored.id
+            if (parsed.profiles.isEmpty()) {
+                error(
+                    parsed.errors.firstOrNull()
+                        ?: "Не найдено поддерживаемых серверов"
+                )
+            }
 
-            prefs().edit()
-                .putString("active_profile", stored.id)
-                .apply()
+            ProfileStore.addAll(this, parsed.profiles)
+
+            val first = ProfileStore.getAll(this).firstOrNull {
+                ProfileStore.sameConnection(it, parsed.profiles.first())
+            }
+
+            if (first != null) {
+                selectedId = first.id
+
+                prefs().edit()
+                    .putString("active_profile", first.id)
+                    .apply()
+            }
 
             refreshProfiles()
-            showMessage("Сервер добавлен")
+
+            showMessage(
+                if (parsed.profiles.size == 1) {
+                    "Сервер добавлен"
+                } else {
+                    "Добавлено серверов: ${parsed.profiles.size}" +
+                        if (parsed.errors.isNotEmpty()) {
+                            ", пропущено: ${parsed.errors.size}"
+                        } else {
+                            ""
+                        }
+                }
+            )
         } catch (e: Exception) {
             showMessage(
                 "Ошибка импорта: ${e.message}"
