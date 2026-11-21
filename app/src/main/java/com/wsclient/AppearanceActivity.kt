@@ -1,18 +1,14 @@
 package com.wsclient
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
-import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.SeekBar
 import android.widget.TextView
-import android.widget.Toast
 
 class AppearanceActivity : Activity() {
     private lateinit var root: LinearLayout
@@ -32,14 +28,12 @@ class AppearanceActivity : Activity() {
         val scroll = android.widget.ScrollView(this).apply { addView(root) }
         root.addView(label("Внешний вид", 27, true))
         root.addView(label("Темы, акцент, обои и прозрачность карточек", 13, false).also { it.setPadding(0, dp(5), 0, dp(18)) })
-        val autoConnect = android.widget.CheckBox(this).apply {
-            text = "Автоподключение при запуске WS Client"
-            textSize = 13f
-            setTextColor(palette.foreground)
+        val autoConnect = AppCheckBox(this, "Автоподключение при запуске WS Client").apply {
             isChecked = AutoConnect.enabled(this@AppearanceActivity)
             setOnCheckedChangeListener { _, checked -> AutoConnect.setEnabled(this@AppearanceActivity, checked) }
         }
         root.addView(autoConnect)
+        root.addView(space(8))
         root.addView(
             action(
                 if (palette.isLight) "Переключить на тёмную тему" else "Переключить на светлую тему",
@@ -79,11 +73,9 @@ class AppearanceActivity : Activity() {
             Customization.setWallpaper(this, null); buildUi()
         })
         root.addView(space(6))
-        root.addView(label("Затемнение обоев: ${Customization.dim(this)}%", 13, false))
-        root.addView(slider(0, 90, Customization.dim(this)) { Customization.setDim(this, it) })
+        root.addView(sliderBlock("Затемнение обоев", 0, 90, Customization.dim(this)) { Customization.setDim(this, it) })
         root.addView(space(10))
-        root.addView(label("Прозрачность карточек: ${Customization.cardAlpha(this)}%", 13, false))
-        root.addView(slider(45, 100, Customization.cardAlpha(this)) { Customization.setCardAlpha(this, it) })
+        root.addView(sliderBlock("Прозрачность карточек", 45, 100, Customization.cardAlpha(this)) { Customization.setCardAlpha(this, it) })
         root.addView(space(16))
         root.addView(action("ГОТОВО", Customization.accent(this), Color.WHITE) { finish() })
         setContentView(scroll)
@@ -92,27 +84,28 @@ class AppearanceActivity : Activity() {
     }
 
     private fun editAccent() {
-        val input = EditText(this).apply {
-            hint = "#RRGGBB"
-            setSingleLine(true)
-            setText(String.format("#%06X", 0xFFFFFF and Customization.accent(this@AppearanceActivity)))
-        }
-        AlertDialog.Builder(this).setTitle("Акцентный цвет").setView(input)
+        val input = AppInput.create(
+            this,
+            "#RRGGBB",
+            String.format("#%06X", 0xFFFFFF and Customization.accent(this))
+        )
+        AppDialog.Builder(this).setTitle("Акцентный цвет").setView(input)
             .setPositiveButton("Применить") { _, _ ->
                 val color = runCatching { Color.parseColor(input.text.toString().trim()) }.getOrNull()
-                if (color == null) Toast.makeText(this, "Нужен HEX-цвет, например #6688FF", Toast.LENGTH_LONG).show()
+                if (color == null) AppToast.show(this, "Нужен HEX-цвет, например #6688FF", true)
                 else { Customization.setAccent(this, color); buildUi() }
             }.setNegativeButton("Отмена", null).show()
     }
 
-    private fun slider(min: Int, max: Int, value: Int, onChanged: (Int) -> Unit): SeekBar = SeekBar(this).apply {
-        this.max = max - min
-        progress = value - min
-        setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { if (fromUser) onChanged(progress + min) }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
-            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
+    private fun sliderBlock(title: String, min: Int, max: Int, value: Int, onChanged: (Int) -> Unit): LinearLayout {
+        val block = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val caption = label("$title: $value%", 13, false)
+        block.addView(caption)
+        block.addView(AppSlider(this, min, max, value) { v ->
+            caption.text = "$title: $v%"
+            onChanged(v)
         })
+        return block
     }
 
     private fun applyWallpaperPreview() {
@@ -129,7 +122,7 @@ class AppearanceActivity : Activity() {
             Customization.setWallpaper(this, uri)
             buildUi()
         } catch (e: Exception) {
-            Toast.makeText(this, "Не удалось сохранить доступ к изображению: ${e.message}", Toast.LENGTH_LONG).show()
+            AppToast.show(this, "Не удалось сохранить доступ к изображению: ${e.message}", true)
         }
     }
 
@@ -141,7 +134,7 @@ class AppearanceActivity : Activity() {
         text = textValue; textSize = 14f; gravity = Gravity.CENTER_VERTICAL
         setTextColor(fg); setPadding(dp(15), dp(15), dp(15), dp(15))
         background = android.graphics.drawable.GradientDrawable().apply { setColor(bg); cornerRadius = dp(14).toFloat() }
-        isClickable = true; isFocusable = true; setOnClickListener { click() }
+        isClickable = true; isFocusable = true; Ui.pressable(this); setOnClickListener { click() }
     }
     private fun space(h: Int) = View(this).apply { layoutParams = LinearLayout.LayoutParams(1, dp(h)) }
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
