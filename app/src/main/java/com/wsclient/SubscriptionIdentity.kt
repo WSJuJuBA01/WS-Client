@@ -209,7 +209,7 @@ object SubscriptionIdentity {
             IdentityField.OS_VERSION,
             IdentityField.DEVICE_OS
         ),
-        appVersion = "3.4.3",
+        appVersion = "3.9.9",
         clientHeader = "INCY",
         accept = "*/*",
         acceptLanguage = "ru-MM",
