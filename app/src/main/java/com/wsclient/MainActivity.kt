@@ -1334,7 +1334,7 @@ class MainActivity : Activity() {
             )
         }
 
-    private fun pingServers(
+        private fun pingServers(
         members: List<ServerProfile>
     ) {
         // Не запускаем повторные проверки одного сервера.
@@ -1357,45 +1357,82 @@ class MainActivity : Activity() {
             "Проверяю ${targets.size} серверов…"
         )
 
-        // Проверки выполняются последовательно:
-        // это снижает нагрузку на слабые устройства.
+        // Сколько серверов проверяется одновременно.
+        // Если на слабом телефоне будут лаги или ложные «ошибки»,
+        // уменьшите число.
+        val parallelism = 20
+
         Thread {
-            var successful = 0
-            var failed = 0
+            val successful =
+                java.util.concurrent.atomic.AtomicInteger(0)
 
-            targets.forEach { profile ->
-                val result = runCatching {
-                    ServerLatency.check(profile)
-                }.getOrDefault(-1L)
+            val failed =
+                java.util.concurrent.atomic.AtomicInteger(0)
 
-                pingResults[profile.id] = result
-                pingingIds.remove(profile.id)
+            // Чтобы список не перерисовывался после каждого результата,
+            // обновляем его не чаще раза в 250 мс.
+            val refreshQueued =
+                java.util.concurrent.atomic.AtomicBoolean(false)
 
-                if (result >= 0L) {
-                    successful++
-                } else {
-                    failed++
+            val pool = java.util.concurrent.Executors
+                .newFixedThreadPool(
+                    minOf(parallelism, targets.size)
+                )
+
+            try {
+                val tasks = targets.map { profile ->
+                    pool.submit(
+                        Runnable {
+                            val result = runCatching {
+                                ServerLatency.check(profile)
+                            }.getOrDefault(-1L)
+
+                            pingResults[profile.id] = result
+                            pingingIds.remove(profile.id)
+
+                            if (result >= 0L) {
+                                successful.incrementAndGet()
+                            } else {
+                                failed.incrementAndGet()
+                            }
+
+                            if (refreshQueued.compareAndSet(false, true)) {
+                                trafficHandler.postDelayed({
+                                    refreshQueued.set(false)
+
+                                    if (!isFinishing && !isDestroyed) {
+                                        refreshProfiles()
+                                    }
+                                }, 250L)
+                            }
+                        }
+                    )
                 }
 
-                runOnUiThread {
-                    if (!isFinishing && !isDestroyed) {
-                        refreshProfiles()
-                    }
+                tasks.forEach {
+                    runCatching { it.get() }
                 }
+            } finally {
+                pool.shutdown()
+
+                // Страховка: ни один сервер не должен навсегда
+                // остаться в состоянии «проверяется».
+                targets.forEach { pingingIds.remove(it.id) }
             }
 
             runOnUiThread {
                 if (!isFinishing && !isDestroyed) {
                     showMessage(
                         "Проверка завершена: " +
-                            "$successful успешно, $failed с ошибкой"
+                            "${successful.get()} успешно, " +
+                            "${failed.get()} с ошибкой"
                     )
 
                     refreshProfiles()
                 }
             }
         }.start()
-    }
+        }
 
     // ---------------------------------------------------------
     // Статистика
