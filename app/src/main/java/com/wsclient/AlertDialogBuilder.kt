@@ -1,6 +1,5 @@
 package com.wsclient
 
-import android.app.AlertDialog
 import android.content.Context
 import android.widget.EditText
 
@@ -11,7 +10,7 @@ object AlertDialogBuilder {
         input: EditText,
         onOk: () -> Unit
     ) {
-        AlertDialog.Builder(context)
+        AppDialog.Builder(context)
             .setTitle(title)
             .setView(input)
             .setPositiveButton("Добавить") { _, _ -> onOk() }
