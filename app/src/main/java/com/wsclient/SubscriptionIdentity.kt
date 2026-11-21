@@ -164,23 +164,9 @@ object SubscriptionIdentity {
         preset: String
     ): ClientIdentitySettings {
         return when (preset.lowercase(Locale.ROOT)) {
-            "happ" -> current.copy(
-                clientPreset = "happ",
-                userAgent =
-                    "Happ/3.26.3/Android/17839452147361875676",
-                appVersion = "3.26.3",
-                clientHeader = "Happ"
-            )
 
-            "v2raytun" -> current.copy(
-                clientPreset = "v2raytun",
-                userAgent = "v2raytun/android",
-                appVersion = "",
-                clientHeader = "v2raytun"
-            )
-
-            "inocy" -> current.copy(
-                clientPreset = "inocy",
+            "incy" -> current.copy(
+                clientPreset = "incy",
                 userAgent =
                     "INCY/3.9.9/android Dalvik/2.1.0",
                 appVersion = "3.9.9",
