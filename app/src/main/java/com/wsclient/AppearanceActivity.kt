@@ -46,18 +46,15 @@ class AppearanceActivity : Activity() {
                 Customization.accent(this),
                 Color.WHITE
             ) {
-                Customization.setPreset(
-                    this,
-                    if (palette.isLight) "midnight" else "pastel"
-                )
+                Customization.toggleDark(this)
                 buildUi()
             }
         )
         root.addView(space(10))
         root.addView(label("ТЕМА", 11, true))
-        Customization.presets.forEach { preset ->
-            root.addView(action("${if (palette.id == preset.id) "✓  " else ""}${preset.title}", preset.surface, preset.foreground) {
-                Customization.setPreset(this, preset.id)
+        Customization.presets(this).forEach { preset ->
+            root.addView(action("${if (palette.family == preset.family) "✓  " else ""}${preset.title}", preset.surface, preset.foreground) {
+                Customization.setPreset(this, preset.family)
                 buildUi()
             })
             root.addView(space(7))
